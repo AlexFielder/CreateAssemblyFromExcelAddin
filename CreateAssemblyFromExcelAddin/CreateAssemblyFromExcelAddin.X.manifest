@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+
+  <assemblyIdentity name="CreateAssemblyFromExcelAddin" version="1.0.0.0"></assemblyIdentity>
+
+  <clrClass clsid="{38d3b483-2797-4307-92ae-8456410d6801}" progid="CreateAssemblyFromExcelAddin.StandardAddInServer" threadingModel="Both" name="CreateAssemblyFromExcelAddin.CreateAssemblyFromExcelAddin.StandardAddInServer" runtimeVersion=""></clrClass>
+
+  <file name="CreateAssemblyFromExcelAddin.dll" hashalg="SHA1"></file>
+
+</assembly>
