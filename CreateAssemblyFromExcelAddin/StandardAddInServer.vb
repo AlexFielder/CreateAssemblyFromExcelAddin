@@ -8,6 +8,12 @@ Imports System.Linq
 Imports System.Text.RegularExpressions
 Imports System.Drawing
 Imports Microsoft.Office.Interop
+Imports VDF = Autodesk.DataManagement.Client.Framework
+Imports Microsoft.Web.Services3
+Imports Autodesk.Connectivity.WebServices
+Imports ADSK = Autodesk.Connectivity.WebServices
+Imports Autodesk.Connectivity.WebServicesTools
+Imports Autodesk.Connectivity.Explorer.ExtensibilityTools
 
 Namespace CreateAssemblyFromExcelAddin
     <ProgIdAttribute("CreateAssemblyFromExcelAddin.StandardAddInServer"), _
@@ -149,7 +155,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim oXL As Excel.Application
             Dim oWB As Excel.Workbook
             Dim oSheet As Excel.Worksheet
-            Dim oRng As Excel.Range
+            'Dim oRng As Excel.Range
             
             ' Start Excel and get Application object.
             oXL = CreateObject("Excel.Application")
@@ -625,7 +631,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim pattern As String = "(.*)(sht-)(\d{3})(.*)"
             Dim matches As MatchCollection = Regex.Matches(p1, pattern)
             For Each m As Match In matches
-                Dim g As Group = m.Groups(3)
+                Dim g As System.Text.RegularExpressions.Group = m.Groups(3)
                 f = CInt(g.Value)
             Next
             Return CInt(f)
@@ -633,6 +639,7 @@ Namespace CreateAssemblyFromExcelAddin
 #End Region
 
     End Class
+#Region "Sub Object Class"
     ''' <summary>
     ''' Our SubObject Class
     ''' </summary>
@@ -735,6 +742,8 @@ Namespace CreateAssemblyFromExcelAddin
             Return x.Level.CompareTo(y.Level)
         End Function
     End Class
+#End Region
+
 #Region "PictureDispConverter"
     ''' <summary>
     ''' Class that converts our icons into something Inventor can use.
@@ -811,6 +820,261 @@ Namespace CreateAssemblyFromExcelAddin
         End Function
     End Class
 #End Region
+#Region "Vault Command Class"
+    ''' <summary>
+    ''' The base class for a Vault Mirror command.
+    ''' Each command is self contained.  In other words, nothing is cached between commands,
+    ''' the client is re-logged in for each command.
+    ''' </summary>
+    Public MustInherit Class Command
+        'private static long MAX_FILE_SIZE = 45 * 1024 * 1024; // 45 MB 
 
+        Protected m_conn As VDF.Vault.Currency.Connections.Connection
+        Protected m_vaultExplorer As IExplorerUtil
+        Protected m_vault As String
+
+        Public Display As IStatusDisplay
+
+        Public Sub New(username As String, password As String, server As String, vault As String)
+            m_vault = vault
+            m_conn = VDF.Vault.Library.ConnectionManager.LogIn(server, vault, username, password, VDF.Vault.Currency.Connections.AuthenticationFlags.Standard, Nothing).Connection
+            Display = Nothing
+        End Sub
+
+        Protected Sub DeleteFile(filePath As String)
+            If Display IsNot Nothing Then
+                Display.ChangeStatusMessage("Deleting " & filePath)
+            End If
+
+            System.IO.File.SetAttributes(filePath, FileAttributes.Normal)
+            System.IO.File.Delete(filePath)
+
+        End Sub
+
+        Protected Sub DeleteFolder(dirPath As String)
+            Dim subFolderPaths As String() = Directory.GetDirectories(dirPath)
+            If subFolderPaths IsNot Nothing Then
+                For Each subFolderPath As String In subFolderPaths
+                    DeleteFolder(subFolderPath)
+                Next
+            End If
+
+            Dim filePaths As String() = Directory.GetFiles(dirPath)
+            If filePaths IsNot Nothing Then
+                For Each filePath As String In filePaths
+                    DeleteFile(filePath)
+                Next
+            End If
+
+            Directory.Delete(dirPath)
+        End Sub
+
+
+        Protected Sub DownloadFile(file As ADSK.File, filePath As String)
+            If Display IsNot Nothing Then
+                Display.ChangeStatusMessage("Downloading " & Convert.ToString(file.Name))
+            End If
+
+            ' remove the read-only attribute
+            If System.IO.File.Exists(filePath) Then
+                System.IO.File.SetAttributes(filePath, FileAttributes.Normal)
+            End If
+
+            'm_vaultExplorer.DownloadFile(file, filePath);
+            Dim settings As New VDF.Vault.Settings.AcquireFilesSettings(m_conn)
+            settings.AddFileToAcquire(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file), VDF.Vault.Settings.AcquireFilesSettings.AcquisitionOption.Download, New VDF.Currency.FilePathAbsolute(filePath))
+            m_conn.FileManager.AcquireFiles(settings)
+        End Sub
+
+
+#Region "Explicit Download"
+
+        ' Downloading CAD files via the webservices is discouraged starting in Vault 2012.
+        ' Using the ExtensibilityTools DLL is the preferred method since it will fix up any broken
+        ' references.  The downside is that the Vault client must be installed.
+
+        'protected void DownloadFile(ADSK.File file, string filePath)
+        '{
+        '    if (Display != null)
+        '        Display.ChangeStatusMessage("Downloading " + file.Name);
+
+        '    // remove the read-only attribute
+        '    if (System.IO.File.Exists(filePath))
+        '        System.IO.File.SetAttributes(filePath, FileAttributes.Normal);
+
+        '    if (file.FileSize > MAX_FILE_SIZE)
+        '        DownloadFileLarge(file, filePath);
+        '    else
+        '        DownloadFileStandard(file, filePath);
+
+        '    // set the file to read-only
+        '    System.IO.File.SetAttributes(filePath, FileAttributes.ReadOnly);
+        '}
+
+        'private void DownloadFileStandard(ADSK.File file, string filePath)
+        '{
+        '    using (FileStream stream = new FileStream(filePath, FileMode.Create, FileAccess.ReadWrite))
+        '    {
+        '        byte[] fileData;
+        '        m_serviceManager.DocumentService.DownloadFile(file.Id, true, out fileData);
+
+        '        stream.Write(fileData, 0, fileData.Length);
+        '        stream.Close();
+        '    }
+        '}
+
+        'private void DownloadFileLarge(ADSK.File file, string filePath)
+        '{
+        '    if (System.IO.File.Exists(filePath))
+        '        System.IO.File.SetAttributes(filePath, FileAttributes.Normal);
+
+        '    using (FileStream stream = new FileStream(filePath, FileMode.Create, FileAccess.ReadWrite))
+        '    {
+        '        long startByte = 0;
+        '        long endByte = MAX_FILE_SIZE - 1;
+        '        byte[] buffer;
+
+        '        while (startByte < file.FileSize)
+        '        {
+        '            endByte = startByte + MAX_FILE_SIZE;
+        '            if (endByte > file.FileSize)
+        '                endByte = file.FileSize;
+
+        '            buffer = m_serviceManager.DocumentService.DownloadFilePart(file.Id, startByte, endByte, true);
+        '            stream.Write(buffer, 0, buffer.Length);
+        '            startByte += buffer.Length;
+        '        }
+        '        stream.Close();
+        '    }
+        '}
+#End Region
+
+        Public Sub Execute()
+            Execute_Impl()
+            VDF.Vault.Library.ConnectionManager.LogOut(m_conn)
+            m_conn = Nothing
+            m_vaultExplorer = Nothing
+        End Sub
+
+        Public MustOverride Sub Execute_Impl()
+
+    End Class
+
+    Public Interface IStatusDisplay
+        Sub ChangeStatusMessage(message As String)
+    End Interface
+#End Region
+#Region "Vault Full Mirror Command Class"
+    ''' <summary>
+    ''' Summary description for FullMirrorCommand.
+    ''' </summary>
+    Public Class FullMirrorCommand
+        Inherits Command
+        Private m_outputFolder As String
+
+        Public Sub New(username As String, password As String, server As String, vault As String, outputFolder As String)
+            MyBase.New(username, password, server, vault)
+            m_outputFolder = outputFolder
+        End Sub
+
+        Public Overrides Sub Execute_Impl()
+            ' cycle through all of the files in the Vault and place them on disk if needed
+            Dim root As Folder = m_conn.WebServiceManager.DocumentService.GetFolderRoot()
+
+            ' add the vault name to the local path.  This prevents users from accedently
+            ' wiping out their C drive or something like that.
+            Dim localPath As String = System.IO.Path.Combine(m_outputFolder, m_vault)
+            FullMirrorVaultFolder(root, localPath)
+
+            ' cycle through all of the files on disk and make sure that they are in the Vault
+            FullMirrorLocalFolder(root, localPath)
+
+        End Sub
+
+        Private Sub FullMirrorVaultFolder(folder As Folder, localFolder As String)
+            If folder.Cloaked Then
+                Return
+            End If
+
+            If Not Directory.Exists(localFolder) Then
+                Directory.CreateDirectory(localFolder)
+            End If
+
+            Dim files As ADSK.File() = m_conn.WebServiceManager.DocumentService.GetLatestFilesByFolderId(folder.Id, True)
+            If files IsNot Nothing Then
+                For Each file As ADSK.File In files
+                    If file.Cloaked Then
+                        Continue For
+                    End If
+
+                    Dim filePath As String = System.IO.Path.Combine(localFolder, file.Name)
+                    If System.IO.File.Exists(filePath) Then
+                        If file.CreateDate <> System.IO.File.GetCreationTime(filePath) Then
+                            DownloadFile(file, filePath)
+                        End If
+                    Else
+                        DownloadFile(file, filePath)
+                    End If
+                Next
+            End If
+
+            Dim subFolders As Folder() = m_conn.WebServiceManager.DocumentService.GetFoldersByParentId(folder.Id, False)
+            If subFolders IsNot Nothing Then
+                For Each subFolder As Folder In subFolders
+                    FullMirrorVaultFolder(subFolder, System.IO.Path.Combine(localFolder, subFolder.Name))
+                Next
+            End If
+        End Sub
+
+        Private Sub FullMirrorLocalFolder(folder As Folder, localFolder As String)
+            If folder.Cloaked Then
+                Return
+            End If
+
+            ' delete any files on disk that are not in the vault
+            Dim localFiles As String() = Directory.GetFiles(localFolder)
+            Dim vaultFiles As ADSK.File() = m_conn.WebServiceManager.DocumentService.GetLatestFilesByFolderId(folder.Id, True)
+
+            If vaultFiles Is Nothing AndAlso localFiles IsNot Nothing Then
+                For Each localFile As String In localFiles
+                    DeleteFile(localFile)
+                Next
+            Else
+                For Each localFile As String In localFiles
+                    Dim fileFound As Boolean = False
+                    Dim filename As String = System.IO.Path.GetFileName(localFile)
+                    For Each vaultFile As ADSK.File In vaultFiles
+                        If Not vaultFile.Cloaked AndAlso vaultFile.Name = filename Then
+                            fileFound = True
+                            Exit For
+                        End If
+                    Next
+
+                    If Not fileFound Then
+                        DeleteFile(localFile)
+                    End If
+                Next
+            End If
+
+
+            ' recurse the subdirectories and delete any folders not in the Vault
+            Dim localFullPaths As String() = Directory.GetDirectories(localFolder)
+            If localFullPaths IsNot Nothing Then
+                For Each localFullPath As String In localFullPaths
+                    Dim vaultPath As String = Convert.ToString(folder.FullName) & "/" & System.IO.Path.GetFileName(localFullPath)
+                    Dim vaultSubFolder As Folder() = m_conn.WebServiceManager.DocumentService.FindFoldersByPaths(New String() {vaultPath})
+
+                    If vaultSubFolder(0).Id < 0 Then
+                        DeleteFolder(localFullPath)
+                    Else
+                        FullMirrorLocalFolder(vaultSubFolder(0), localFullPath)
+                    End If
+                Next
+            End If
+        End Sub
+
+    End Class
+
+#End Region
 End Namespace
 
