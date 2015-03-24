@@ -25,6 +25,14 @@ Namespace CreateAssemblyFromExcelAddin
         Private m_inventorApplication As Inventor.Application
         Public StartFolder As String
         Public ProjectCode As String
+        Public PartsList As List(Of SubObjectCls) = New List(Of SubObjectCls)
+        Public CompleteList As List(Of SubObjectCls) = New List(Of SubObjectCls)
+        Public r As List(Of SubObjectCls)
+        Public ParentList As List(Of String)
+        Public parentAssemblyFilename As String
+        Public highestlevel As Long = 0
+        Public foundfile As FileInfo
+        Private Property files As IEnumerable(Of FileInfo)
 #Region "ApplicationAddInServer Members"
 
         Public Sub Activate(ByVal addInSiteObject As Inventor.ApplicationAddInSite, ByVal firstTime As Boolean) Implements Inventor.ApplicationAddInServer.Activate
@@ -146,8 +154,6 @@ Namespace CreateAssemblyFromExcelAddin
 
         Private Sub RunCAFE(Document As _Document)
             Dim FilesArray As New ArrayList
-            Dim PartsList As List(Of SubObjectCls)
-            PartsList = New List(Of SubObjectCls)
             'pass the local variables to our external .dll
             'XTVB.InventorApplication = ThisApplication
             Dim ProjectCode As String = InputBox("Which project?", "4 Letter Project Code", "CODE")
@@ -171,11 +177,6 @@ Namespace CreateAssemblyFromExcelAddin
                 'not sure if we should change this to Column C as it contains the files we know about from the Vault
                 'if we did we could then have it insert that file if we linked this routine to Vault...?
                 If oSheet.Cells(MyRow, 2).Value = "" Then Exit For
-                'If GoExcel.CellValue("B" & MyRow) = "" Then Exit For 'exits when the value is empty!
-                '    Dim tmpstr As String = GoExcel.CellValue("I" & MyRow) 'parent row
-                '    If Not tmpstr.StartsWith("AS-") Then
-                '        Continue For
-                '    End If
                 'some error checking since we don't always have parent assembly information in Excel:
                 Dim PartNo As String = oSheet.Cells(MyRow, 2).Value
                 Dim Descr As String = oSheet.Cells(MyRow, 11).Value
@@ -185,11 +186,13 @@ Namespace CreateAssemblyFromExcelAddin
                 If ParentAssembly = "" Then
                     ParentAssembly = "NA"
                 End If
-                SO = New SubObjectCls(PartNo, Descr, RevNumber, LegacyDrawingNumber, ParentAssembly)
+                Dim FileName As String = String.Empty
+                If Not oSheet.Cells(MyRow, 3).Value = "" Then 'Vaulted filename
+                    FileName = oSheet.Cells(MyRow, 3).Value
+                End If
+                SO = New SubObjectCls(PartNo, Descr, RevNumber, LegacyDrawingNumber, ParentAssembly, FileName)
                 PartsList.Add(SO)
             Next
-            'MessageBox.Show(PartsList.Count)
-            'Call XTVB.PopulatePartsList(PartsList)
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
             ProjectCode = ProjectCode
             PartsList = PartsList
@@ -198,26 +201,11 @@ Namespace CreateAssemblyFromExcelAddin
             oWB = Nothing
             oXL.Quit()
             oXL = Nothing
-            'XTVB.FilesArray = FilesArray
-            'XTVB.GoExcel = GoExcel.Application
             Dim tr As Transaction
             tr = m_inventorApplication.TransactionManager.StartTransaction(m_inventorApplication.ActiveDocument, "Create Standard Parts From Excel")
             BeginCreateAssemblyStructure()
             tr.End()
         End Sub
-
-        Public PartsList As List(Of SubObjectCls)
-        Public CompleteList As List(Of SubObjectCls) = New List(Of SubObjectCls)
-        Public r As List(Of SubObjectCls)
-        Public ParentList As List(Of String)
-        Public parentAssemblyFilename As String
-        Public highestlevel As Long = 0
-        Public foundfile As FileInfo
-        Private Property files As IEnumerable(Of FileInfo)
-
-        'Public Sub PopulatePartsList(ByVal iLogicPartsList As List(Of SubObjectCls))
-        '    PartsList = iLogicPartsList
-        'End Sub
 
         ''' <summary>
         ''' Begins our Create Assembly subroutine
@@ -282,8 +270,14 @@ Namespace CreateAssemblyFromExcelAddin
             Dim newfilename As String = String.Empty
             Try
                 If subObject.PartNo.StartsWith("AS-") Then
-                    newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
-                    basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                    If subObject.LegacyDescr.ToLower.Contains("cable") Then
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
+                        basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.iam"
+                    Else
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
+                        basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                    End If
+                    
                 ElseIf subObject.PartNo.StartsWith("DT-") Then
                     If subObject.LegacyDescr.Contains("ASSEMBLY") Or subObject.LegacyDescr.Contains("ASSY") Then
                         newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
@@ -476,15 +470,6 @@ Namespace CreateAssemblyFromExcelAddin
                     foundfile = file
                     foundfilename = file.Name
                 End If
-
-                'For Each file As FileInfo In files
-                '    If System.IO.Path.GetFileNameWithoutExtension(file.Name) = newfilename Then
-                '        foundfilename = file.Name
-                '        foundfile = file 'set this in case we can't return foundfilename
-                '        Return foundfilename
-                '        Exit For
-                '    End If
-                'Next
             Catch ex As Exception
                 MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
             End Try
@@ -651,29 +636,32 @@ Namespace CreateAssemblyFromExcelAddin
         Public LegacyRev As String
         Public LegacyDrawingNo As String
         Public ParentAssembly As String
+        Public FileName As String
         Public HasChildren As Boolean
         Public Children As List(Of SubObjectCls)
         Public Level As Long
 
         ''' <summary>
-        ''' Creates a new instance
+        ''' 
         ''' </summary>
-        ''' <param name="m_partno">Part Number (From Filename)</param>
-        ''' <param name="m_legacydescr">Legacy Drawing Description</param>
-        ''' <param name="m_legacyrev">Legacy Drawing Revision</param>
-        ''' <param name="m_legacydrawingno">Legacy Drawing Number</param>
-        ''' <param name="m_parentassy">Parent Assembly Name</param>
-        ''' <param name="m_haschildren">Optional Boolean for whether this is a parent Assembly</param>
-        ''' <param name="m_children">Optional Collection of Children used when HasChildren= True</param>
-        ''' <param name="m_level">Part/Assembly level within the Top-Level Assembly Structure</param>
+        ''' <param name="m_partno"></param>
+        ''' <param name="m_legacydescr"></param>
+        ''' <param name="m_legacyrev"></param>
+        ''' <param name="m_legacydrawingno"></param>
+        ''' <param name="m_parentassy"></param>
+        ''' <param name="m_filename"></param>
+        ''' <param name="m_haschildren"></param>
+        ''' <param name="m_children"></param>
+        ''' <param name="m_level"></param>
         ''' <remarks></remarks>
         Public Sub New(ByVal m_partno As String,
                        ByVal m_legacydescr As String,
                        ByVal m_legacyrev As String,
                        ByVal m_legacydrawingno As String,
                        ByVal m_parentassy As String,
-                             Optional ByVal m_haschildren As Boolean = False,
-                             Optional ByVal m_children As List(Of SubObjectCls) = Nothing,
+                       Optional m_filename As String = "",
+                       Optional ByVal m_haschildren As Boolean = False,
+                       Optional ByVal m_children As List(Of SubObjectCls) = Nothing,
                        Optional ByVal m_level As Long = 0
                        )
             PartNo = m_partno
@@ -681,6 +669,7 @@ Namespace CreateAssemblyFromExcelAddin
             LegacyRev = m_legacyrev
             LegacyDrawingNo = m_legacydrawingno
             ParentAssembly = m_parentassy
+            FileName = m_filename
             HasChildren = m_haschildren
             Children = m_children
             Level = m_level
@@ -841,35 +830,6 @@ Namespace CreateAssemblyFromExcelAddin
             Display = Nothing
         End Sub
 
-        Protected Sub DeleteFile(filePath As String)
-            If Display IsNot Nothing Then
-                Display.ChangeStatusMessage("Deleting " & filePath)
-            End If
-
-            System.IO.File.SetAttributes(filePath, FileAttributes.Normal)
-            System.IO.File.Delete(filePath)
-
-        End Sub
-
-        Protected Sub DeleteFolder(dirPath As String)
-            Dim subFolderPaths As String() = Directory.GetDirectories(dirPath)
-            If subFolderPaths IsNot Nothing Then
-                For Each subFolderPath As String In subFolderPaths
-                    DeleteFolder(subFolderPath)
-                Next
-            End If
-
-            Dim filePaths As String() = Directory.GetFiles(dirPath)
-            If filePaths IsNot Nothing Then
-                For Each filePath As String In filePaths
-                    DeleteFile(filePath)
-                Next
-            End If
-
-            Directory.Delete(dirPath)
-        End Sub
-
-
         Protected Sub DownloadFile(file As ADSK.File, filePath As String)
             If Display IsNot Nothing Then
                 Display.ChangeStatusMessage("Downloading " & Convert.ToString(file.Name))
@@ -985,10 +945,6 @@ Namespace CreateAssemblyFromExcelAddin
             ' wiping out their C drive or something like that.
             Dim localPath As String = System.IO.Path.Combine(m_outputFolder, m_vault)
             FullMirrorVaultFolder(root, localPath)
-
-            ' cycle through all of the files on disk and make sure that they are in the Vault
-            FullMirrorLocalFolder(root, localPath)
-
         End Sub
 
         Private Sub FullMirrorVaultFolder(folder As Folder, localFolder As String)
@@ -1025,54 +981,6 @@ Namespace CreateAssemblyFromExcelAddin
                 Next
             End If
         End Sub
-
-        Private Sub FullMirrorLocalFolder(folder As Folder, localFolder As String)
-            If folder.Cloaked Then
-                Return
-            End If
-
-            ' delete any files on disk that are not in the vault
-            Dim localFiles As String() = Directory.GetFiles(localFolder)
-            Dim vaultFiles As ADSK.File() = m_conn.WebServiceManager.DocumentService.GetLatestFilesByFolderId(folder.Id, True)
-
-            If vaultFiles Is Nothing AndAlso localFiles IsNot Nothing Then
-                For Each localFile As String In localFiles
-                    DeleteFile(localFile)
-                Next
-            Else
-                For Each localFile As String In localFiles
-                    Dim fileFound As Boolean = False
-                    Dim filename As String = System.IO.Path.GetFileName(localFile)
-                    For Each vaultFile As ADSK.File In vaultFiles
-                        If Not vaultFile.Cloaked AndAlso vaultFile.Name = filename Then
-                            fileFound = True
-                            Exit For
-                        End If
-                    Next
-
-                    If Not fileFound Then
-                        DeleteFile(localFile)
-                    End If
-                Next
-            End If
-
-
-            ' recurse the subdirectories and delete any folders not in the Vault
-            Dim localFullPaths As String() = Directory.GetDirectories(localFolder)
-            If localFullPaths IsNot Nothing Then
-                For Each localFullPath As String In localFullPaths
-                    Dim vaultPath As String = Convert.ToString(folder.FullName) & "/" & System.IO.Path.GetFileName(localFullPath)
-                    Dim vaultSubFolder As Folder() = m_conn.WebServiceManager.DocumentService.FindFoldersByPaths(New String() {vaultPath})
-
-                    If vaultSubFolder(0).Id < 0 Then
-                        DeleteFolder(localFullPath)
-                    Else
-                        FullMirrorLocalFolder(vaultSubFolder(0), localFullPath)
-                    End If
-                Next
-            End If
-        End Sub
-
     End Class
 
 #End Region
