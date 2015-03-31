@@ -275,18 +275,43 @@ Namespace CreateAssemblyFromExcelAddin
                 VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().StartsWith("replace with"))
                 VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
                 VaultedFileList = VaultedFileList.FindAll(Function(x) x.Name.EndsWith(".ipt") Or x.Name.EndsWith(".iam"))
-                'VaultedFileList.RemoveAll(Function(x) Not x.Name.ToLower().EndsWith(".ipt") Or Not x.Name.ToLower().EndsWith(".iam"))
             End If
 
-            AssociationArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationsByIds(VaultedFileList.Select(Function(x) x.Id).ToArray(), FileAssociationTypeEnum.All, False, FileAssociationTypeEnum.All, False, False, False)
+            AssociationArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationsByIds(
+                VaultedFileList.Select(Function(x) x.Id).ToArray(),
+                FileAssociationTypeEnum.None,
+                False,
+                FileAssociationTypeEnum.Dependency,
+                True,
+                False,
+                False)
 
+            ' organize the return values by the parent file
+            Dim associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
             For Each array As FileAssocArray In AssociationArrays
                 If Not array.FileAssocs Is Nothing Then
-                    For Each assoc As FileAssoc In array.FileAssocs
-                        Console.WriteLine(assoc.ExpectedVaultPath)
+                    For Each association As FileAssoc In array.FileAssocs
+                        Dim parent As ACW.File = association.ParFile
+                        If associationsByFile.ContainsKey(parent.Id) Then
+                            ' parent is already in the hashtable, add an new child entry
+                            Dim list As List(Of Vault.Currency.Entities.FileIteration) = associationsByFile(parent.Id)
+                            list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
+                        Else
+                            ' add the parent to the hashtable.
+                            Dim list As New List(Of Vault.Currency.Entities.FileIteration)()
+                            list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
+                            associationsByFile.Add(parent.Id, list)
+                        End If
                     Next
                 End If
             Next
+            'next we need to remove those files who have parents present in the CompleteListFromSystemDrive list from the VaultedFileList.
+            For Each SubObj As SubObjectCls In CompleteListFromSystemDrive
+                If (associationsByFile.ContainsKey(selectedfile.File.EntityIterationId)) Then
+
+                End If
+            Next
+
 
             'this whole thing is broken
             'For i As Integer = 3 To FileList.Count - 1
