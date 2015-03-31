@@ -1,19 +1,21 @@
-Imports Inventor
-Imports System.Runtime.InteropServices
-Imports System.Windows.Forms
-Imports Microsoft.Win32
 Imports System.Collections.Generic
+Imports System.Drawing
 Imports System.IO
 Imports System.Linq
+Imports System.Runtime.InteropServices
 Imports System.Text.RegularExpressions
-Imports System.Drawing
+Imports System.Windows.Forms
+Imports Inventor
 Imports Microsoft.Office.Interop
-Imports VDF = Autodesk.DataManagement.Client.Framework
-Imports Microsoft.Web.Services3
-Imports Autodesk.Connectivity.WebServices
+
+Imports ACW = Autodesk.Connectivity.WebServices
 Imports ADSK = Autodesk.Connectivity.WebServices
-Imports Autodesk.Connectivity.WebServicesTools
 Imports Autodesk.Connectivity.Explorer.ExtensibilityTools
+Imports Autodesk.Connectivity.WebServices
+Imports Autodesk.Connectivity.WebServicesTools
+Imports Framework = Autodesk.DataManagement.Client.Framework
+Imports Vault = Autodesk.DataManagement.Client.Framework.Vault
+Imports VDF = Autodesk.DataManagement.Client.Framework
 
 Namespace CreateAssemblyFromExcelAddin
     <ProgIdAttribute("CreateAssemblyFromExcelAddin.StandardAddInServer"), _
@@ -23,26 +25,36 @@ Namespace CreateAssemblyFromExcelAddin
 
         ' Inventor application object.
         Private m_inventorApplication As Inventor.Application
-        Public StartFolder As String
-        Public ProjectCode As String
-        Public PartsList As List(Of SubObjectCls) = New List(Of SubObjectCls)
-        Public CompleteList As List(Of SubObjectCls) = New List(Of SubObjectCls)
-        Public r As List(Of SubObjectCls)
-        Public ParentList As List(Of String)
-        Public parentAssemblyFilename As String
-        Public highestlevel As Long = 0
-        Public foundfile As FileInfo
+        'Vault-specific:
+        Public m_conn As Framework.Vault.Currency.Connections.Connection = Nothing
+        Private StartFolder As String
+        Private ProjectCode As String
+        Private PartsList As List(Of SubObjectCls) = New List(Of SubObjectCls)
+        Private CompleteList As List(Of SubObjectCls) = New List(Of SubObjectCls)
+        'Private r As List(Of SubObjectCls)
+        'Private ParentList As List(Of String)
+        Public Shared NoMatch As Boolean = True
+        Private parentAssemblyFilename As String
+        Private highestlevel As Long = 0
+        Private foundfile As FileInfo
         Private Property files As IEnumerable(Of FileInfo)
+        Private FileList As List(Of ACW.File) = New List(Of Autodesk.Connectivity.WebServices.File)
+        Private FileIterations As List(Of Vault.Currency.Entities.FileIteration) = New List(Of Vault.Currency.Entities.FileIteration)
+        Private FolderIdsToFolderEntities As IDictionary(Of Long, Vault.Currency.Entities.Folder)
+        Public Shared selectedfile As ListBoxFileItem = Nothing
+        Public Shared FoundList As List(Of ListBoxFileItem) = Nothing
 #Region "ApplicationAddInServer Members"
 
-        Public Sub Activate(ByVal addInSiteObject As Inventor.ApplicationAddInSite, ByVal firstTime As Boolean) Implements Inventor.ApplicationAddInServer.Activate
+
+
+        Public Sub Activate(ByVal AddInSiteObject As Inventor.ApplicationAddInSite, ByVal FirstTime As Boolean) Implements Inventor.ApplicationAddInServer.Activate
 
             ' This method is called by Inventor when it loads the AddIn.
             ' The AddInSiteObject provides access to the Inventor Application object.
             ' The FirstTime flag indicates if the AddIn is loaded for the first time.
 
             ' Initialize AddIn members.
-            m_inventorApplication = addInSiteObject.Application
+            m_inventorApplication = AddInSiteObject.Application
 
             ' TODO:  Add ApplicationAddInServer.Activate implementation.
             ' e.g. event initialization, command creation etc.
@@ -68,7 +80,7 @@ Namespace CreateAssemblyFromExcelAddin
                     GetICOResource("CreateAssemblyFromExcelAddin.Icons8-Windows-8-Food-Cafe.ico"))
             End Try
 
-            If (firstTime) Then
+            If (FirstTime) Then
                 If (m_inventorApplication.UserInterfaceManager.
                     InterfaceStyle =
                     InterfaceStyleEnum.kRibbonInterface) Then
@@ -103,9 +115,9 @@ Namespace CreateAssemblyFromExcelAddin
 
         Public ReadOnly Property Automation() As Object Implements Inventor.ApplicationAddInServer.Automation
 
-            ' This property is provided to allow the AddIn to expose an API 
+            ' This property is provided to allow the AddIn to expose an API
             ' of its own to other programs. Typically, this  would be done by
-            ' implementing the AddIn's API interface in a class and returning 
+            ' implementing the AddIn's API interface in a class and returning
             ' that class object through this property.
 
             Get
@@ -114,15 +126,15 @@ Namespace CreateAssemblyFromExcelAddin
 
         End Property
 
-        Public Sub ExecuteCommand(ByVal commandID As Integer) Implements Inventor.ApplicationAddInServer.ExecuteCommand
+        Public Sub ExecuteCommand(ByVal CommandID As Integer) Implements Inventor.ApplicationAddInServer.ExecuteCommand
 
-            ' Note:this method is now obsolete, you should use the 
+            ' Note:this method is now obsolete, you should use the
             ' ControlDefinition functionality for implementing commands.
 
         End Sub
 
 #End Region
-
+#Region "CAFE"
 
 
         Private btnDef As Inventor.ButtonDefinition
@@ -130,6 +142,7 @@ Namespace CreateAssemblyFromExcelAddin
             If TypeOf m_inventorApplication.ActiveDocument Is PartDocument Then
                 MessageBox.Show("Needs to be run from the highest-level Assembly file!")
             Else
+                m_conn = Vault.Forms.Library.Login(Nothing)
                 RunCAFE(m_inventorApplication.ActiveDocument)
             End If
         End Sub
@@ -153,7 +166,7 @@ Namespace CreateAssemblyFromExcelAddin
         End Function
 
         Private Sub RunCAFE(Document As _Document)
-            Dim FilesArray As New ArrayList
+            'Dim FilesArray As New ArrayList
             'pass the local variables to our external .dll
             'XTVB.InventorApplication = ThisApplication
             Dim ProjectCode As String = InputBox("Which project?", "4 Letter Project Code", "CODE")
@@ -162,7 +175,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim oWB As Excel.Workbook
             Dim oSheet As Excel.Worksheet
             'Dim oRng As Excel.Range
-            
+
             ' Start Excel and get Application object.
             oXL = CreateObject("Excel.Application")
             oXL.Visible = True
@@ -173,24 +186,40 @@ Namespace CreateAssemblyFromExcelAddin
 
             'FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
             For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
-                Dim SO As SubObjectCls
+                Dim SO As SubObjectCls = New SubObjectCls()
                 'not sure if we should change this to Column C as it contains the files we know about from the Vault
                 'if we did we could then have it insert that file if we linked this routine to Vault...?
-                If oSheet.Cells(MyRow, 2).Value = "" Then Exit For
+                Dim DWGNum As Excel.Range = oSheet.Cells(MyRow, 2)
+                If DWGNum.Value2 = "" Then Exit For
                 'some error checking since we don't always have parent assembly information in Excel:
-                Dim PartNo As String = oSheet.Cells(MyRow, 2).Value
-                Dim Descr As String = oSheet.Cells(MyRow, 11).Value
-                Dim RevNumber As String = oSheet.Cells(MyRow, 12).Value
-                Dim LegacyDrawingNumber As String = oSheet.Cells(MyRow, 13).Value
-                Dim ParentAssembly As String = oSheet.Cells(MyRow, 9).Value
-                If ParentAssembly = "" Then
-                    ParentAssembly = "NA"
+                Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
+                If Not PartNo.Value2 = "" Then
+                    SO.PartNo = PartNo.Value2
                 End If
-                Dim FileName As String = String.Empty
-                If Not oSheet.Cells(MyRow, 3).Value = "" Then 'Vaulted filename
-                    FileName = oSheet.Cells(MyRow, 3).Value
+                Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
+                If Not Descr.Value2 = "" Then
+                    SO.LegacyDescr = Descr.Value2
                 End If
-                SO = New SubObjectCls(PartNo, Descr, RevNumber, LegacyDrawingNumber, ParentAssembly, FileName)
+                Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
+                If Not RevNumber.Value2 = "" Then
+                    SO.LegacyRev = RevNumber.Value2
+                End If
+                Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
+                If Not LegacyDrawingNumber.Value2 = "" Then
+                    SO.LegacyDrawingNo = LegacyDrawingNumber.Value2
+                End If
+                Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
+                If ParentAssembly.Value2 = "" Then
+                    SO.ParentAssembly = "NA"
+                Else
+                    SO.ParentAssembly = ParentAssembly.Value2
+                End If
+                Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
+                If Not FileName.Value2 = "" Then 'Vaulted filename
+                    SO.FileName = FileName.Value2
+                Else
+                    SO.FileName = ""
+                End If
                 PartsList.Add(SO)
             Next
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
@@ -229,6 +258,7 @@ Namespace CreateAssemblyFromExcelAddin
                 MessageBox.Show("You need to pick a folder for this to work")
                 Exit Sub
             End If
+            dlg1.Dispose()
             Dim asmDoc As AssemblyDocument
             Try
                 asmDoc = m_inventorApplication.ActiveDocument
@@ -238,11 +268,8 @@ Namespace CreateAssemblyFromExcelAddin
             parentAssemblyFilename = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName)
             Dim level As Long = 0
             ParseFolders(DirStruct, level)
-            Dim res = From a As SubObjectCls In CompleteList
-                      Where (a.Level > 1)
-                      Order By a.Level
-                      Group By groupKey = level
-                      Into groupName = Group
+            'here is where we need to query the vault/download files
+            BeginRePopulateCompleteList()
 
             Dim grouped = CompleteList.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
 
@@ -260,36 +287,130 @@ Namespace CreateAssemblyFromExcelAddin
         End Sub
 
         ''' <summary>
+        ''' Copied from our QueryVault Excel addin.
+        ''' Allows us to search for a bunch of filenames
+        ''' </summary>
+        ''' <remarks></remarks>
+        Private Sub BeginRePopulateCompleteList()
+            DoInitialSearch()
+            Dim results As List(Of Autodesk.Connectivity.WebServices.File) = New List(Of ACW.File)()
+            If FileList.Count > 0 Then
+                FileList.RemoveAll(Function(x) x.Name.ToLower().StartsWith("replace with"))
+                FileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
+                results = FileList.FindAll(Function(x) x.Name.EndsWith(".ipt") OrElse x.Name.EndsWith(".iam"))
+            End If
+            For i As Integer = 3 To FileList.Count - 1
+                If results.Count > 1 Then
+                    Dim fileForm As New FileSelectionForm(m_conn)
+                    Dim PotentialMatches As Integer = 0
+                    For Each file As Autodesk.Connectivity.WebServices.File In results
+                        If file.Name.Contains(FileList(i).Name) Then
+                            Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file))
+                            fileForm.SearchResultsListBox.Items.Add(fileItem)
+                            PotentialMatches += 1
+                        End If
+                    Next
+                    If fileForm.SearchResultsListBox.Items.Count = 1 Then
+                        'only one file added so it must be the file we need.
+                        selectedfile = DirectCast(fileForm.SearchResultsListBox.Items(0), ListBoxFileItem)
+                    ElseIf fileForm.SearchResultsListBox.Items.Count > 1 Then
+                        'create a form object to display found items
+                        Dim selectedfilename As String = String.Empty
+                        'update the items count label
+                        fileForm.m_SearchingForLabel.Text = "Searching for filename(s) containing: " + FileList(i).Name
+                        fileForm.m_itemsCountLabel.Text = IIf((PotentialMatches > 0), PotentialMatches + " Items", "0 Items")
+                        'display the form and wait for it to close using the ShowDialog() method.
+                        fileForm.ShowDialog()
+                    Else
+                        NoMatch = True
+                    End If
+                ElseIf results.Count = 1 Then
+                    'get the first and only file we found whose name contains .iam or .ipt
+                    Dim foundfile As Autodesk.Connectivity.WebServices.File = results(0)
+                    Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, foundfile))
+                    selectedfile = fileItem
+                End If
+                If selectedfile IsNot Nothing Then
+                    Throw New NotImplementedException()
+                    'Try
+                    'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(x) x).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
+                    'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
+
+                    'Catch ex As Exception
+                    '    MessageBox.Show("the error was: " + ex.Message + " " + ex.StackTrace)
+                    '    Throw
+
+                    'End Try
+                End If
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Based on the implementation in the QueryVault Excel addin, this will attempt to take the CompleteList object, extract the "friendly" filenames
+        ''' and search the vault for them.
+        ''' Then we'll need to remove the files which are children of vaulted components from CompleteList
+        ''' </summary>
+        ''' <remarks></remarks>
+        Private Sub DoInitialSearch()
+            Dim NonVaultedFileNames As String() = CompleteList.Select(Function(x) x.PartNo).ToArray()
+
+            'build the search based on our range of non-vaulted filenames.
+            Dim conditions As SrchCond() = New SrchCond(NonVaultedFileNames.Length - 1) {}
+            For i As Integer = 0 To NonVaultedFileNames.Length - 1
+                Dim percent As Double = (CDbl(i) / NonVaultedFileNames.Length)
+                Dim searchCondition As New SrchCond()
+                searchCondition.PropDefId = 9
+                'filename
+                searchCondition.PropTyp = PropertySearchType.SingleProperty
+                searchCondition.SrchOper = 1
+                searchCondition.SrchTxt = NonVaultedFileNames(i)
+                searchCondition.SrchRule = SearchRuleType.May
+                conditions(i) = searchCondition
+            Next
+            Dim bookmark As String = String.Empty
+            Dim status As SrchStatus = Nothing
+            fileList = New List(Of ACW.File)()
+            While status Is Nothing OrElse fileList.Count < status.TotalHits
+                Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark, _
+                    status)
+
+                If files IsNot Nothing Then
+                    fileList.AddRange(files)
+                End If
+            End While
+        End Sub
+
+        ''' <summary>
         ''' Creates dummy files to pre-populate Vault with or creates files named "Replace With " to denote where files already exist.
         ''' </summary>
         ''' <param name="subObject">The Subobject we need to create/replace</param>
         ''' <returns>Returns the filename of the newly created dummy Part/Assemly</returns>
         ''' <remarks></remarks>
-        Private Function CreateAssemblyComponents(subObject As SubObjectCls) As String
+        Private Function CreateAssemblyComponents(SubObject As SubObjectCls) As String
             Dim basepartname As String = String.Empty
             Dim newfilename As String = String.Empty
             Try
-                If subObject.PartNo.StartsWith("AS-") Then
-                    If subObject.LegacyDescr.ToLower.Contains("cable") Then
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
+                If SubObject.PartNo.StartsWith("AS-", StringComparison.Ordinal) Then
+                    If SubObject.LegacyDescr.ToLower.Contains("cable") Then
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
                         basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.iam"
                     Else
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
                         basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
                     End If
-                    
-                ElseIf subObject.PartNo.StartsWith("DT-") Then
-                    If subObject.LegacyDescr.Contains("ASSEMBLY") Or subObject.LegacyDescr.Contains("ASSY") Then
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".iam"
+
+                ElseIf SubObject.PartNo.StartsWith("DT-", StringComparison.Ordinal) Then
+                    If SubObject.LegacyDescr.Contains("ASSEMBLY") Or SubObject.LegacyDescr.Contains("ASSY") Then
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
                         basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
                     Else
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & subObject.PartNo & ".ipt"
+                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
                         basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.ipt"
                     End If
-                ElseIf subObject.PartNo.StartsWith("DL-") Then
+                ElseIf SubObject.PartNo.StartsWith("DL-", StringComparison.Ordinal) Then
                     'technically this assembly is missing from the structure!
                     newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) &
-                        "\" & GetFriendlyDirName(subObject.PartNo) & ".iam"
+                        "\" & GetFriendlyDirName(SubObject.PartNo) & ".iam"
                     basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
                 End If
                 'check if the file exists locally and copy a template to create it if not.
@@ -327,26 +448,26 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="subObject">The SubObject to Create (it it doesn't already exist!)</param>
         ''' <param name="parentName">The parent of subObject</param>
         ''' <remarks></remarks>
-        Private Sub CreateAssemblyStructure(subObject As SubObjectCls, parentName As String)
+        Private Sub CreateAssemblyStructure(SubObject As SubObjectCls, ParentName As String)
             Dim asmDoc As AssemblyDocument = Nothing
             Dim realOcc As ComponentOccurrence = Nothing
             Dim realOccStr As String = String.Empty
             Dim PosnMatrix As Matrix
             Try
-                Dim newfilename As String = CreateAssemblyComponents(subObject)
+                Dim newfilename As String = CreateAssemblyComponents(SubObject)
                 If Not System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then
                     'file is outside the working folder for this assembly
 
                 Else
                     'file is new.
-                    Dim i As Integer = PartsList.FindIndex(Function(str As SubObjectCls) str.PartNo = subObject.PartNo)
+                    Dim i As Integer = PartsList.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
                     If Not i = -1 Then
-                        AligniPropertyValues(subObject, PartsList(i))
+                        AligniPropertyValues(SubObject, PartsList(i))
                     End If
                 End If
 
                 PosnMatrix = m_inventorApplication.TransientGeometry.CreateMatrix
-                If parentName = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName) Then
+                If ParentName = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName) Then
                     'immediate descendants of the parent assembly
                     asmDoc = m_inventorApplication.ActiveDocument
                     Try
@@ -354,7 +475,7 @@ Namespace CreateAssemblyFromExcelAddin
                         realOccStr = realOcc.Name
                         If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
                             System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then 'assign iproperties to new parts
-                            AssignIProperties(realOcc, subObject)
+                            AssignIProperties(realOcc, SubObject)
                         End If
                     Catch ex As Exception
                         MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
@@ -364,7 +485,7 @@ Namespace CreateAssemblyFromExcelAddin
                     Dim tmpdoc As Inventor.Document = Nothing
                     For Each doc As Inventor.Document In m_inventorApplication.ActiveDocument.AllReferencedDocuments
                         'at this point we should stop the insert of occurrences if the assembly is called "Replace With XXX" as it's doing work that's unecessary!
-                        If doc.DisplayName = parentName & ".iam" Or doc.DisplayName.StartsWith("Replace With " & parentName, StringComparison.OrdinalIgnoreCase) Then
+                        If doc.DisplayName = ParentName & ".iam" Or doc.DisplayName.StartsWith("Replace With " & ParentName, StringComparison.OrdinalIgnoreCase) Then
                             tmpdoc = doc
                             Exit For
                         End If
@@ -383,7 +504,7 @@ Namespace CreateAssemblyFromExcelAddin
                             realOccStr = realOcc.Name
                             If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
                                 System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then 'assign iproperties to new parts
-                                AssignIProperties(realOcc, subObject)
+                                AssignIProperties(realOcc, SubObject)
                             End If
                         End If
                     Catch ex As Exception
@@ -401,10 +522,10 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="subObject">the subObjectCls to update</param>
         ''' <param name="PartsListObj">the subObjectCls containing the values from Excel</param>
         ''' <remarks></remarks>
-        Private Sub AligniPropertyValues(ByRef subObject As SubObjectCls, ByVal PartsListObj As SubObjectCls)
-            subObject.LegacyDescr = PartsListObj.LegacyDescr
-            subObject.LegacyDrawingNo = PartsListObj.LegacyDrawingNo
-            subObject.LegacyRev = PartsListObj.LegacyRev
+        Private Sub AligniPropertyValues(ByRef SubObject As SubObjectCls, ByVal PartsListObj As SubObjectCls)
+            SubObject.LegacyDescr = PartsListObj.LegacyDescr
+            SubObject.LegacyDrawingNo = PartsListObj.LegacyDrawingNo
+            SubObject.LegacyRev = PartsListObj.LegacyRev
         End Sub
 
         ''' <summary>
@@ -413,18 +534,18 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="realocc">the occurrence we wish to edit</param>
         ''' <param name="subObject">the subobject containing our aligned iProperties (taken from Excel)</param>
         ''' <remarks></remarks>
-        Private Sub AssignIProperties(ByVal realocc As ComponentOccurrence, ByVal subObject As SubObjectCls)
+        Private Sub AssignIProperties(ByVal RealOcc As ComponentOccurrence, ByVal SubObject As SubObjectCls)
             Try
-                Dim invProjProperties As PropertySet = realocc.Definition.Document.PropertySets.Item("{32853F0F-3444-11D1-9E93-0060B03C1CA6}")
-                Dim invSummaryiProperties As PropertySet = realocc.Definition.Document.PropertySets.Item("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}")
+                Dim invProjProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{32853F0F-3444-11D1-9E93-0060B03C1CA6}")
+                Dim invSummaryiProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}")
                 'Project iProperties
-                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kPartNumberDesignTrackingProperties).Value = subObject.PartNo 'part number
-                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = subObject.LegacyDescr 'description
+                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kPartNumberDesignTrackingProperties).Value = SubObject.PartNo 'part number
+                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = SubObject.LegacyDescr 'description
                 invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kProjectDesignTrackingProperties).Value = "A90.1" 'project
                 'Summary iProperties
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = subObject.LegacyRev 'revision
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = subObject.LegacyDrawingNo 'subject
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = subObject.LegacyDescr 'title
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = SubObject.LegacyRev 'revision
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = SubObject.LegacyDrawingNo 'subject
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = SubObject.LegacyDescr 'title
                 invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kCommentsSummaryInformation).Value = "MODELLED FROM DRAWINGS"
             Catch ex As Exception
                 MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
@@ -437,9 +558,9 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="newfilename">the @@-######-000 Filename to look for.</param>
         ''' <returns>Returns the filename we were searching for if it already exists</returns>
         ''' <remarks></remarks>
-        Private Function FindFileInVWF(newfilename As String) As String
+        Private Function FindFileInVWF(NewFileName As String) As String
             Dim dir = New DirectoryInfo("C:\Legacy Vault Working Folder\Designs")
-            Dim tmpstr = GetExistingFile(dir, System.IO.Path.GetFileNameWithoutExtension(newfilename))
+            Dim tmpstr = GetExistingFile(dir, System.IO.Path.GetFileNameWithoutExtension(NewFileName))
             If tmpstr = "" And foundfile Is Nothing Then
                 Return ""
             Else
@@ -454,17 +575,17 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="newfilename">the file to look for</param>
         ''' <returns>Returns foundfilename if it finds a match</returns>
         ''' <remarks>Also creates the files collection if it doesn't exist already</remarks>
-        Private Function GetExistingFile(ByVal dir As DirectoryInfo, ByVal newfilename As String) As String
+        Private Function GetExistingFile(ByVal Dir As DirectoryInfo, ByVal NewFileName As String) As String
             Dim foundfilename As String = String.Empty
             Try
                 'this way should create a large list of .ipt/iam files in one pass that we can keep for later reuse. It will likely be slow initially but faster later.
                 If files Is Nothing Then
-                    files = dir.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(Function(s As FileInfo) _
+                    files = Dir.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(Function(s As FileInfo) _
                                                                                              s.Name.EndsWith(".ipt", StringComparison.OrdinalIgnoreCase) OrElse _
                                                                                              s.Name.EndsWith(".iam", StringComparison.OrdinalIgnoreCase))
                 End If
                 Dim file As FileInfo = (From f As FileInfo In files
-                                       Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = newfilename
+                                       Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = NewFileName
                                        Select f).FirstOrDefault()
                 If Not file Is Nothing Then
                     foundfile = file
@@ -476,6 +597,9 @@ Namespace CreateAssemblyFromExcelAddin
             Return foundfilename
         End Function
 
+        
+
+#End Region
 #Region "Folder Structure Parser from console app"
         ''' <summary>
         ''' Parses a series of subfolders, ignoring directories called "Superseded", documents whose names contain "IL" or "DL"
@@ -483,18 +607,18 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="dir">The Directory to search</param>
         ''' <param name="level">the structure level we are currently at</param>
         ''' <remarks></remarks>
-        Public Sub ParseFolders(ByVal dir As DirectoryInfo, ByVal level As Long)
+        Public Sub ParseFolders(ByVal Dir As DirectoryInfo, ByVal Level As Long)
             Try
-                If Not dir.Name.Contains("Superseded") Then
-                    Dim friendlydirname As String = GetFriendlyDirName(dir.Name)
+                If Not Dir.Name.Contains("Superseded") Then
+                    Dim friendlydirname As String = GetFriendlyDirName(Dir.Name)
                     Dim friendlyparentdirname As String = String.Empty
-                    If Not dir.Parent Is Nothing Then
-                        friendlyparentdirname = GetFriendlyDirName(dir.Parent.Name)
+                    If Not Dir.Parent Is Nothing Then
+                        friendlyparentdirname = GetFriendlyDirName(Dir.Parent.Name)
                     Else
                         friendlyparentdirname = parentAssemblyFilename
                     End If
                     'need to account for instances where the "AS-" file isn't the first we'll find
-                    Dim thisAssy As FileInfo = (From a As FileInfo In dir.GetFiles()
+                    Dim thisAssy As FileInfo = (From a As FileInfo In Dir.GetFiles()
                                                Where GetFriendlyName(a.Name) = friendlydirname And _
                                                Not a.Name.Contains("IL") And _
                                                Not a.Name.Contains("DL") And _
@@ -502,50 +626,42 @@ Namespace CreateAssemblyFromExcelAddin
                                                (getsheetnum(a.Name) <= 1)
                                                Select a).FirstOrDefault
                     If Not thisAssy Is Nothing Then
-                        CompleteList.Add(New SubObjectCls(m_partno:=GetFriendlyName(thisAssy.Name),
-                                                m_legacydescr:="",
-                                                m_legacyrev:="",
-                                                m_legacydrawingno:="",
-                                                m_parentassy:=friendlyparentdirname,
-                                                m_level:=level + 1))
+                        CompleteList.Add(New SubObjectCls() With
+                                                    {.PartNo = GetFriendlyName(thisAssy.Name),
+                                                        .ParentAssembly = friendlyparentdirname,
+                                                        .Level = Level + 1})
                     Else
                         'the assembly drawing probably exists somewhere else in the structure so for now we'll assume it's just "missing"
-                        thisAssy = New FileInfo(dir.FullName & "\" & GetFriendlyDirName(dir.Name) & ".txt")
-                        CompleteList.Add(New SubObjectCls(m_partno:=GetFriendlyName(thisAssy.Name),
-                                                m_legacydescr:="",
-                                                m_legacyrev:="",
-                                                m_legacydrawingno:="",
-                                                m_parentassy:=friendlyparentdirname,
-                                                m_level:=level + 1))
+                        thisAssy = New FileInfo(Dir.FullName & "\" & GetFriendlyDirName(Dir.Name) & ".txt")
+                        CompleteList.Add(New SubObjectCls() With
+                            {.PartNo = GetFriendlyName(thisAssy.Name),
+                                .ParentAssembly = friendlyparentdirname,
+                                .Level = Level + 1})
                     End If
-                    For Each file As FileInfo In dir.GetFiles()
+                    For Each file As FileInfo In Dir.GetFiles()
                         If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name Then
                             'if the directory name is the same as the assembly name then the parentassembly is the folder above!
                             Dim friendlyfilename As String = GetFriendlyName(file.Name)
                             If friendlydirname = friendlyfilename Then 'parent assembly in this folder
                                 If getsheetnum(file.Name) <= 1 Then
-                                    CompleteList.Add(New SubObjectCls(m_partno:=friendlyfilename,
-                                                              m_legacydescr:="",
-                                                              m_legacyrev:="",
-                                                              m_legacydrawingno:="",
-                                                              m_parentassy:=friendlyparentdirname,
-                                                              m_level:=level + 1))
+                                    CompleteList.Add(New SubObjectCls() With
+                                                     {.PartNo = friendlyfilename,
+                                                      .ParentAssembly = friendlyparentdirname,
+                                                      .Level = Level + 1})
                                 End If
                             Else
                                 If getsheetnum(file.Name) <= 1 Then
-                                    CompleteList.Add(New SubObjectCls(m_partno:=friendlyfilename,
-                                                              m_legacydescr:="",
-                                                              m_legacyrev:="",
-                                                              m_legacydrawingno:="",
-                                                              m_parentassy:=friendlydirname,
-                                                              m_level:=level + 2))
+                                    CompleteList.Add(New SubObjectCls() With
+                                                     {.PartNo = friendlyfilename,
+                                                      .ParentAssembly = friendlydirname,
+                                                      .Level = Level + 2})
                                 End If
                             End If
                         End If
                     Next
-                    For Each subDir As DirectoryInfo In dir.GetDirectories()
+                    For Each subDir As DirectoryInfo In Dir.GetDirectories()
                         If Not subDir.Name.Contains("Superseded") Then
-                            ParseFolders(subDir, level + 1)
+                            ParseFolders(subDir, Level + 1)
                         End If
                     Next
                 End If
@@ -559,13 +675,13 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <summary>
         ''' Returns a "Friendly" filename for comparison-sake
         ''' </summary>
-        ''' <param name="p">the String to match against</param>
+        ''' <param name="Str">the String to match against</param>
         ''' <returns>Returns the matched String</returns>
         ''' <remarks></remarks>
-        Public Function GetFriendlyName(p As String) As Object
+        Public Function GetFriendlyName(Str As String) As Object
             Dim f As String = String.Empty
             Dim r As New Regex("\w{2}-\d{5,}|\w{2}-\w\d{5,}")
-            f = r.Match(p).Captures(0).ToString() + "-000"
+            f = r.Match(Str).Captures(0).ToString() + "-000"
             Console.WriteLine(f)
             Return f
         End Function
@@ -573,14 +689,14 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <summary>
         ''' Returns a "Friendly" directory name for comparison-sake and use as the "parentname"
         ''' </summary>
-        ''' <param name="p1">the String to match against</param>
+        ''' <param name="Str">the String to match against</param>
         ''' <returns>Returns the matched String</returns>
         ''' <remarks></remarks>
-        Public Function GetFriendlyDirName(p1 As String) As Object
-            If Not p1.Contains(":") Then
+        Public Function GetFriendlyDirName(Str As String) As Object
+            If Not Str.Contains(":") Then
                 Dim f As String = String.Empty
                 Dim r As New Regex("\d{3,}|\w\d{3,}")
-                f = "AS-" + r.Match(p1).Captures(0).ToString() + "-000"
+                f = "AS-" + r.Match(Str).Captures(0).ToString() + "-000"
                 Return f
             Else
                 'Return p1
@@ -591,30 +707,30 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <summary>
         ''' Returns the Directory code without any spurious extras
         ''' </summary>
-        ''' <param name="p1">the String to match against</param>
+        ''' <param name="Str">the String to match against</param>
         ''' <returns>Returns the matched String</returns>
         ''' <remarks></remarks>
-        Public Function GetDirName(p1 As String) As Object
-            If Not p1.Contains(":") Then
+        Public Function GetDirName(Str As String) As Object
+            If Not Str.Contains(":") Then
                 Dim f As String = String.Empty
                 Dim r As New Regex("\d{3,}|\w\d{3,}") 'get just the @##### or ###### drawing number
-                f = r.Match(p1).Captures(0).ToString()
+                f = r.Match(Str).Captures(0).ToString()
                 Return f
             Else
-                Return p1
+                Return Str
             End If
         End Function
 
         ''' <summary>
         ''' Returns the Sheetnum for each file we've found
         ''' </summary>
-        ''' <param name="p1">the String to match against</param>
+        ''' <param name="Str">the String to match against</param>
         ''' <returns>Returns the matched String</returns>
         ''' <remarks></remarks>
-        Private Function getsheetnum(p1 As String) As Integer
+        Private Function getsheetnum(Str As String) As Integer
             Dim f As String = String.Empty
             Dim pattern As String = "(.*)(sht-)(\d{3})(.*)"
-            Dim matches As MatchCollection = Regex.Matches(p1, pattern)
+            Dim matches As MatchCollection = Regex.Matches(Str, pattern)
             For Each m As Match In matches
                 Dim g As System.Text.RegularExpressions.Group = m.Groups(3)
                 f = CInt(g.Value)
@@ -622,6 +738,8 @@ Namespace CreateAssemblyFromExcelAddin
             Return CInt(f)
         End Function
 #End Region
+
+        
 
     End Class
 #Region "Sub Object Class"
@@ -631,49 +749,89 @@ Namespace CreateAssemblyFromExcelAddin
     ''' <remarks></remarks>
     Public Class SubObjectCls
         Implements IComparable(Of SubObjectCls)
-        Public PartNo As String
-        Public LegacyDescr As String
-        Public LegacyRev As String
-        Public LegacyDrawingNo As String
-        Public ParentAssembly As String
-        Public FileName As String
-        Public HasChildren As Boolean
-        Public Children As List(Of SubObjectCls)
-        Public Level As Long
+        Private m_PartNo As String
+        Public Property PartNo() As String
+            Get
+                Return m_PartNo
+            End Get
+            Set(ByVal value As String)
+                m_PartNo = value
+            End Set
+        End Property
+        Private m_LegacyDescr As String
+        Public Property LegacyDescr() As String
+            Get
+                Return m_LegacyDescr
+            End Get
+            Set(ByVal value As String)
+                m_LegacyDescr = value
+            End Set
+        End Property
+        Private m_LegacyRev As String
+        Public Property LegacyRev() As String
+            Get
+                Return m_LegacyRev
+            End Get
+            Set(ByVal value As String)
+                m_LegacyRev = value
+            End Set
+        End Property
+        Private m_LegacyDrawingNo As String
+        Public Property LegacyDrawingNo() As String
+            Get
+                Return m_LegacyDrawingNo
+            End Get
+            Set(ByVal value As String)
+                m_LegacyDrawingNo = value
+            End Set
+        End Property
+        Private m_ParentAssembly As String
+        Public Property ParentAssembly() As String
+            Get
+                Return m_ParentAssembly
+            End Get
+            Set(ByVal value As String)
+                m_ParentAssembly = value
+            End Set
+        End Property
+        Private m_FileName As String
+        Public Property FileName() As String
+            Get
+                Return m_FileName
+            End Get
+            Set(ByVal value As String)
+                m_FileName = value
+            End Set
+        End Property
 
-        ''' <summary>
-        ''' 
-        ''' </summary>
-        ''' <param name="m_partno"></param>
-        ''' <param name="m_legacydescr"></param>
-        ''' <param name="m_legacyrev"></param>
-        ''' <param name="m_legacydrawingno"></param>
-        ''' <param name="m_parentassy"></param>
-        ''' <param name="m_filename"></param>
-        ''' <param name="m_haschildren"></param>
-        ''' <param name="m_children"></param>
-        ''' <param name="m_level"></param>
-        ''' <remarks></remarks>
-        Public Sub New(ByVal m_partno As String,
-                       ByVal m_legacydescr As String,
-                       ByVal m_legacyrev As String,
-                       ByVal m_legacydrawingno As String,
-                       ByVal m_parentassy As String,
-                       Optional m_filename As String = "",
-                       Optional ByVal m_haschildren As Boolean = False,
-                       Optional ByVal m_children As List(Of SubObjectCls) = Nothing,
-                       Optional ByVal m_level As Long = 0
-                       )
-            PartNo = m_partno
-            LegacyDescr = m_legacydescr
-            LegacyRev = m_legacyrev
-            LegacyDrawingNo = m_legacydrawingno
-            ParentAssembly = m_parentassy
-            FileName = m_filename
-            HasChildren = m_haschildren
-            Children = m_children
-            Level = m_level
-        End Sub
+        Private m_HasChildren As Boolean
+        Public Property HasChildren() As Boolean
+            Get
+                Return m_HasChildren
+            End Get
+            Set(ByVal value As Boolean)
+                m_HasChildren = value
+            End Set
+        End Property
+        Private m_Children As List(Of SubObjectCls)
+        Public Property Children() As List(Of SubObjectCls)
+            Get
+                Return m_Children
+            End Get
+            Set(ByVal value As List(Of SubObjectCls))
+                m_Children = value
+            End Set
+        End Property
+        Private m_Level As Long
+        Public Property Level() As Long
+            Get
+                Return m_Level
+            End Get
+            Set(ByVal value As Long)
+                m_Level = value
+            End Set
+        End Property
+
 
         ''' <summary>
         ''' Allows us to use this Class with LINQ
@@ -681,8 +839,8 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="other">the other instance to compare to</param>
         ''' <returns>Returns the comparison requested</returns>
         ''' <remarks></remarks>
-        Public Function CompareTo(other As SubObjectCls) As Integer Implements IComparable(Of SubObjectCls).CompareTo
-            Return Me.CompareTo(other)
+        Public Function CompareTo(Other As SubObjectCls) As Integer Implements IComparable(Of SubObjectCls).CompareTo
+            Return Me.CompareTo(Other)
         End Function
 
         ''' <summary>
@@ -691,8 +849,8 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="source">The Source List to split</param>
         ''' <returns></returns>
         ''' <remarks></remarks>
-        Public Shared Function Split(source As List(Of SubObjectCls)) As List(Of List(Of SubObjectCls))
-            Return source.[Select](Function(x, i) New With { _
+        Public Shared Function Split(Source As List(Of SubObjectCls)) As List(Of List(Of SubObjectCls))
+            Return Source.[Select](Function(x, i) New With { _
                 Key .Index = i, _
                 Key .Value = x _
             }).GroupBy(Function(x) x.Index).[Select](Function(x) x.[Select](Function(v) v.Value).ToList()).ToList()
@@ -701,10 +859,10 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <summary>
         ''' Allows for grouping of the SubObjectCls by whichever variable we choose **Not Implemented**
         ''' </summary>
-        ''' <param name="p1"></param>
+        ''' <param name="P"></param>
         ''' <returns></returns>
         ''' <remarks></remarks>
-        Function GroupBy(p1 As Object) As Object
+        Function GroupBy(P As Object) As Object
             Throw New NotImplementedException
         End Function
 
@@ -732,7 +890,122 @@ Namespace CreateAssemblyFromExcelAddin
         End Function
     End Class
 #End Region
+#Region "ListBoxFileItem"
+    ''' <summary>
+    ''' A list box item which contains a File object
+    ''' </summary>
+    Public Class ListBoxFileItem
+        Private m_file As Vault.Currency.Entities.FileIteration
+        Public ReadOnly Property File() As Vault.Currency.Entities.FileIteration
+            Get
+                Return m_file
+            End Get
+        End Property
 
+        Public Sub New(f As Vault.Currency.Entities.FileIteration)
+            m_file = f
+        End Sub
+        Public m_folder As VDF.Vault.Currency.Entities.Folder
+        Public ReadOnly Property Folder() As VDF.Vault.Currency.Entities.Folder
+            Get
+                Return m_folder
+            End Get
+        End Property
+        ''' <summary>
+        ''' Determines the text displayed in the ListBox
+        ''' </summary>
+        Public Overrides Function ToString() As String
+            Return Me.m_file.EntityName
+        End Function
+
+        Public Property FeatureCount() As Integer
+            Get
+                Return m_FeatureCount
+            End Get
+            Set(value As Integer)
+                m_FeatureCount = Value
+            End Set
+        End Property
+        Private m_FeatureCount As Integer
+
+        Public Property OccurrenceCount() As Integer
+            Get
+                Return m_OccurrenceCount
+            End Get
+            Set(value As Integer)
+                m_OccurrenceCount = Value
+            End Set
+        End Property
+        Private m_OccurrenceCount As Integer
+
+        Public Property ParameterCount() As Integer
+            Get
+                Return m_ParameterCount
+            End Get
+            Set(value As Integer)
+                m_ParameterCount = Value
+            End Set
+        End Property
+        Private m_ParameterCount As Integer
+
+        Public Property ConstraintCount() As Integer
+            Get
+                Return m_ConstraintCount
+            End Get
+            Set(value As Integer)
+                m_ConstraintCount = Value
+            End Set
+        End Property
+        Private m_ConstraintCount As Integer
+
+        Public Property Material() As String
+            Get
+                Return m_Material
+            End Get
+            Set(value As String)
+                m_Material = Value
+            End Set
+        End Property
+        Private m_Material As String
+
+        Public Property Title() As String
+            Get
+                Return m_Title
+            End Get
+            Set(value As String)
+                m_Title = Value
+            End Set
+        End Property
+        Private m_Title As String
+
+        Public Property RevNumber() As String
+            Get
+                Return m_RevNumber
+            End Get
+            Set(value As String)
+                m_RevNumber = Value
+            End Set
+        End Property
+        Private m_RevNumber As String
+
+        Public Property LegacyDrawingNumber() As String
+            Get
+                Return m_LegacyDrawingNumber
+            End Get
+            Set(value As String)
+                m_LegacyDrawingNumber = Value
+            End Set
+        End Property
+        Private m_LegacyDrawingNumber As String
+
+        'public VDF.Vault.Currency.Properties.PropertyValues propValues;
+        'public VDF.Vault.Currency.Properties.PropertyValues PropValues
+        '{
+        '    get { return propValues; }
+        '}
+
+    End Class
+#End Region
 #Region "PictureDispConverter"
     ''' <summary>
     ''' Class that converts our icons into something Inventor can use.
@@ -816,7 +1089,7 @@ Namespace CreateAssemblyFromExcelAddin
     ''' the client is re-logged in for each command.
     ''' </summary>
     Public MustInherit Class Command
-        'private static long MAX_FILE_SIZE = 45 * 1024 * 1024; // 45 MB 
+        'private static long MAX_FILE_SIZE = 45 * 1024 * 1024; // 45 MB
 
         Protected m_conn As VDF.Vault.Currency.Connections.Connection
         Protected m_vaultExplorer As IExplorerUtil
@@ -845,7 +1118,6 @@ Namespace CreateAssemblyFromExcelAddin
             settings.AddFileToAcquire(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file), VDF.Vault.Settings.AcquireFilesSettings.AcquisitionOption.Download, New VDF.Currency.FilePathAbsolute(filePath))
             m_conn.FileManager.AcquireFiles(settings)
         End Sub
-
 
 #Region "Explicit Download"
 
@@ -985,4 +1257,3 @@ Namespace CreateAssemblyFromExcelAddin
 
 #End Region
 End Namespace
-

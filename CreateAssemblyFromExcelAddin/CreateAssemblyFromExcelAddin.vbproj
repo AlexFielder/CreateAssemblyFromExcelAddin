@@ -81,8 +81,14 @@
     <Reference Include="Autodesk.DataManagement.Client.Framework">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.dll</HintPath>
     </Reference>
+    <Reference Include="Autodesk.DataManagement.Client.Framework.Forms">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
+    </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
+    </Reference>
+    <Reference Include="Autodesk.DataManagement.Client.Framework.Vault.Forms">
+      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
     </Reference>
     <Reference Include="Autodesk.Inventor.interop, Version=18.0.0.0, Culture=neutral, PublicKeyToken=d84147f8b4276564, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -108,6 +114,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.vb" />
+    <Compile Include="FileSelectionForm.Designer.vb">
+      <DependentUpon>FileSelectionForm.vb</DependentUpon>
+    </Compile>
+    <Compile Include="FileSelectionForm.vb">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="StandardAddInServer.vb" />
   </ItemGroup>
   <ItemGroup>
@@ -140,6 +152,9 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="FileSelectionForm.resx">
+      <DependentUpon>FileSelectionForm.vb</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Icons8-Windows-8-Food-Cafe.ico" />
   </ItemGroup>
   <ItemGroup>
