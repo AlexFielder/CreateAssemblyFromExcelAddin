@@ -23,24 +23,23 @@ Namespace CreateAssemblyFromExcelAddin
     Public Class StandardAddInServer
         Implements Inventor.ApplicationAddInServer
 
-        ' Inventor application object.
+        ' Inventor
         Private m_inventorApplication As Inventor.Application
-        'Vault-specific:
-        Public m_conn As Framework.Vault.Currency.Connections.Connection = Nothing
         Private StartFolder As String
         Private ProjectCode As String
-        Private PartsList As List(Of SubObjectCls) = New List(Of SubObjectCls)
-        Private CompleteList As List(Of SubObjectCls) = New List(Of SubObjectCls)
-        'Private r As List(Of SubObjectCls)
-        'Private ParentList As List(Of String)
+        Private PartsListFromExcel As List(Of SubObjectCls) = New List(Of SubObjectCls)
+        Private CompleteListFromSystemDrive As List(Of SubObjectCls) = New List(Of SubObjectCls)
         Public Shared NoMatch As Boolean = True
         Private parentAssemblyFilename As String
         Private highestlevel As Long = 0
         Private foundfile As FileInfo
         Private Property files As IEnumerable(Of FileInfo)
-        Private FileList As List(Of ACW.File) = New List(Of Autodesk.Connectivity.WebServices.File)
+        'Vault
+        Public m_conn As Framework.Vault.Currency.Connections.Connection = Nothing
+        Private VaultedFileList As List(Of ACW.File) = New List(Of Autodesk.Connectivity.WebServices.File)
         Private FileIterations As List(Of Vault.Currency.Entities.FileIteration) = New List(Of Vault.Currency.Entities.FileIteration)
         Private FolderIdsToFolderEntities As IDictionary(Of Long, Vault.Currency.Entities.Folder)
+        Private AssociationArrays As ACW.FileAssocArray() = Nothing
         Public Shared selectedfile As ListBoxFileItem = Nothing
         Public Shared FoundList As List(Of ListBoxFileItem) = Nothing
 #Region "ApplicationAddInServer Members"
@@ -169,7 +168,7 @@ Namespace CreateAssemblyFromExcelAddin
             'Dim FilesArray As New ArrayList
             'pass the local variables to our external .dll
             'XTVB.InventorApplication = ThisApplication
-            Dim ProjectCode As String = InputBox("Which project?", "4 Letter Project Code", "CODE")
+            ProjectCode = InputBox("Which project?", "4 Letter Project Code", "CODE")
             Dim filetab As String = ProjectCode + "-MODELLING-BASELINE"
             Dim oXL As Excel.Application
             Dim oWB As Excel.Workbook
@@ -187,45 +186,23 @@ Namespace CreateAssemblyFromExcelAddin
             'FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
             For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
                 Dim SO As SubObjectCls = New SubObjectCls()
-                'not sure if we should change this to Column C as it contains the files we know about from the Vault
-                'if we did we could then have it insert that file if we linked this routine to Vault...?
-                Dim DWGNum As Excel.Range = oSheet.Cells(MyRow, 2)
-                If DWGNum.Value2 = "" Then Exit For
-                'some error checking since we don't always have parent assembly information in Excel:
                 Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
-                If Not PartNo.Value2 = "" Then
-                    SO.PartNo = PartNo.Value2
-                End If
+                If String.IsNullOrEmpty(PartNo.Value2) Then Exit For
+                SO.PartNo = IIf(String.IsNullOrEmpty(PartNo.Value2), "", PartNo.Value2)
                 Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
-                If Not Descr.Value2 = "" Then
-                    SO.LegacyDescr = Descr.Value2
-                End If
+                SO.LegacyDescr = IIf(String.IsNullOrEmpty(Descr.Value2), "", Descr.Value2)
                 Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
-                If Not RevNumber.Value2 = "" Then
-                    SO.LegacyRev = RevNumber.Value2
-                End If
+                SO.LegacyRev = IIf(String.IsNullOrEmpty(RevNumber.Value2), "", RevNumber.Value2)
                 Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
-                If Not LegacyDrawingNumber.Value2 = "" Then
-                    SO.LegacyDrawingNo = LegacyDrawingNumber.Value2
-                End If
+                SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(LegacyDrawingNumber.Value2), "", LegacyDrawingNumber.Value2)
                 Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
-                If ParentAssembly.Value2 = "" Then
-                    SO.ParentAssembly = "NA"
-                Else
-                    SO.ParentAssembly = ParentAssembly.Value2
-                End If
+                SO.ParentAssembly = IIf(String.IsNullOrEmpty(ParentAssembly.Value2), "", ParentAssembly.Value2)
                 Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
-                If Not FileName.Value2 = "" Then 'Vaulted filename
-                    SO.FileName = FileName.Value2
-                Else
-                    SO.FileName = ""
-                End If
-                PartsList.Add(SO)
+                SO.FileName = IIf(String.IsNullOrEmpty(FileName.Value2), "", FileName.Value2)
+                PartsListFromExcel.Add(SO)
             Next
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
-            ProjectCode = ProjectCode
-            PartsList = PartsList
-            oWB.Close()
+            oWB.Close(False)
             oSheet = Nothing
             oWB = Nothing
             oXL.Quit()
@@ -271,7 +248,7 @@ Namespace CreateAssemblyFromExcelAddin
             'here is where we need to query the vault/download files
             BeginRePopulateCompleteList()
 
-            Dim grouped = CompleteList.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
+            Dim grouped = CompleteListFromSystemDrive.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
 
             For Each group In grouped
                 If Not group.Key = 1 Then 'skip the first level as it's our top level assembly!
@@ -283,7 +260,7 @@ Namespace CreateAssemblyFromExcelAddin
                     'End If
                 End If
             Next
-            MessageBox.Show(CompleteList.Count)
+            MessageBox.Show(CompleteListFromSystemDrive.Count)
         End Sub
 
         ''' <summary>
@@ -293,56 +270,69 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <remarks></remarks>
         Private Sub BeginRePopulateCompleteList()
             DoInitialSearch()
-            Dim results As List(Of Autodesk.Connectivity.WebServices.File) = New List(Of ACW.File)()
-            If FileList.Count > 0 Then
-                FileList.RemoveAll(Function(x) x.Name.ToLower().StartsWith("replace with"))
-                FileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
-                results = FileList.FindAll(Function(x) x.Name.EndsWith(".ipt") OrElse x.Name.EndsWith(".iam"))
+            'Dim results As List(Of Autodesk.Connectivity.WebServices.File) = New List(Of ACW.File)()
+            If VaultedFileList.Count > 0 Then
+                VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().StartsWith("replace with"))
+                VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
+                VaultedFileList = VaultedFileList.FindAll(Function(x) x.Name.EndsWith(".ipt") Or x.Name.EndsWith(".iam"))
+                'VaultedFileList.RemoveAll(Function(x) Not x.Name.ToLower().EndsWith(".ipt") Or Not x.Name.ToLower().EndsWith(".iam"))
             End If
-            For i As Integer = 3 To FileList.Count - 1
-                If results.Count > 1 Then
-                    Dim fileForm As New FileSelectionForm(m_conn)
-                    Dim PotentialMatches As Integer = 0
-                    For Each file As Autodesk.Connectivity.WebServices.File In results
-                        If file.Name.Contains(FileList(i).Name) Then
-                            Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file))
-                            fileForm.SearchResultsListBox.Items.Add(fileItem)
-                            PotentialMatches += 1
-                        End If
+
+            AssociationArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationsByIds(VaultedFileList.Select(Function(x) x.Id).ToArray(), FileAssociationTypeEnum.All, False, FileAssociationTypeEnum.All, False, False, False)
+
+            For Each array As FileAssocArray In AssociationArrays
+                If Not array.FileAssocs Is Nothing Then
+                    For Each assoc As FileAssoc In array.FileAssocs
+                        Console.WriteLine(assoc.ExpectedVaultPath)
                     Next
-                    If fileForm.SearchResultsListBox.Items.Count = 1 Then
-                        'only one file added so it must be the file we need.
-                        selectedfile = DirectCast(fileForm.SearchResultsListBox.Items(0), ListBoxFileItem)
-                    ElseIf fileForm.SearchResultsListBox.Items.Count > 1 Then
-                        'create a form object to display found items
-                        Dim selectedfilename As String = String.Empty
-                        'update the items count label
-                        fileForm.m_SearchingForLabel.Text = "Searching for filename(s) containing: " + FileList(i).Name
-                        fileForm.m_itemsCountLabel.Text = IIf((PotentialMatches > 0), PotentialMatches + " Items", "0 Items")
-                        'display the form and wait for it to close using the ShowDialog() method.
-                        fileForm.ShowDialog()
-                    Else
-                        NoMatch = True
-                    End If
-                ElseIf results.Count = 1 Then
-                    'get the first and only file we found whose name contains .iam or .ipt
-                    Dim foundfile As Autodesk.Connectivity.WebServices.File = results(0)
-                    Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, foundfile))
-                    selectedfile = fileItem
-                End If
-                If selectedfile IsNot Nothing Then
-                    Throw New NotImplementedException()
-                    'Try
-                    'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(x) x).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
-                    'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
-
-                    'Catch ex As Exception
-                    '    MessageBox.Show("the error was: " + ex.Message + " " + ex.StackTrace)
-                    '    Throw
-
-                    'End Try
                 End If
             Next
+
+            'this whole thing is broken
+            'For i As Integer = 3 To FileList.Count - 1
+            '    'If results.Count > 1 Then
+            '    Dim fileForm As New FileSelectionForm(m_conn)
+            '    Dim PotentialMatches As Integer = 0
+            '    For Each file As Autodesk.Connectivity.WebServices.File In results
+            '        If file.Name.Contains(FileList(i).Name) Then
+            '            Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file))
+            '            fileForm.SearchResultsListBox.Items.Add(fileItem)
+            '            PotentialMatches += 1
+            '        End If
+            '    Next
+            '    If fileForm.SearchResultsListBox.Items.Count = 1 Then
+            '        'only one file added so it must be the file we need.
+            '        selectedfile = DirectCast(fileForm.SearchResultsListBox.Items(0), ListBoxFileItem)
+            '    ElseIf fileForm.SearchResultsListBox.Items.Count > 1 Then
+            '        'create a form object to display found items
+            '        Dim selectedfilename As String = String.Empty
+            '        'update the items count label
+            '        fileForm.m_SearchingForLabel.Text = "Searching for filename(s) containing: " + FileList(i).Name
+            '        fileForm.m_itemsCountLabel.Text = IIf((PotentialMatches > 0), PotentialMatches + " Items", "0 Items")
+            '        'display the form and wait for it to close using the ShowDialog() method.
+            '        fileForm.ShowDialog()
+            '    Else
+            '        NoMatch = True
+            '    End If
+            '    'ElseIf results.Count = 1 Then
+            '    'get the first and only file we found whose name contains .iam or .ipt
+            '    'Dim foundfile As Autodesk.Connectivity.WebServices.File = results(0)
+            '    'Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, foundfile))
+            '    'selectedfile = fileItem
+            '    'End If
+            '    If selectedfile IsNot Nothing Then
+            '        Throw New NotImplementedException()
+            '        'Try
+            '        'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(x) x).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
+            '        'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
+
+            '        'Catch ex As Exception
+            '        '    MessageBox.Show("the error was: " + ex.Message + " " + ex.StackTrace)
+            '        '    Throw
+
+            '        'End Try
+            '    End If
+            'Next
         End Sub
 
         ''' <summary>
@@ -352,12 +342,14 @@ Namespace CreateAssemblyFromExcelAddin
         ''' </summary>
         ''' <remarks></remarks>
         Private Sub DoInitialSearch()
-            Dim NonVaultedFileNames As String() = CompleteList.Select(Function(x) x.PartNo).ToArray()
-
+            UpdateStatusBar("Getting Initial File details (If available) From Vault... Please Wait")
+            Dim NonVaultedFileNames As String() = CompleteListFromSystemDrive.Select(Function(x) x.PartNo).ToArray()
+            NonVaultedFileNames = NonVaultedFileNames.Distinct.ToArray()
             'build the search based on our range of non-vaulted filenames.
             Dim conditions As SrchCond() = New SrchCond(NonVaultedFileNames.Length - 1) {}
+            Dim percent As Double = Nothing
             For i As Integer = 0 To NonVaultedFileNames.Length - 1
-                Dim percent As Double = (CDbl(i) / NonVaultedFileNames.Length)
+                UpdateStatusBar(percent, "Building Initial Search Conditions... Please Wait")
                 Dim searchCondition As New SrchCond()
                 searchCondition.PropDefId = 9
                 'filename
@@ -369,16 +361,21 @@ Namespace CreateAssemblyFromExcelAddin
             Next
             Dim bookmark As String = String.Empty
             Dim status As SrchStatus = Nothing
-            fileList = New List(Of ACW.File)()
-            While status Is Nothing OrElse fileList.Count < status.TotalHits
+            VaultedFileList = New List(Of ACW.File)()
+
+            While status Is Nothing OrElse VaultedFileList.Count < status.TotalHits
                 Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark, _
                     status)
-
                 If files IsNot Nothing Then
-                    fileList.AddRange(files)
+                    VaultedFileList.AddRange(files)
+                    percent = (CDbl(VaultedFileList.Count) / status.TotalHits)
+                    UpdateStatusBar(percent, "Searching the Ether... Please Wait")
                 End If
             End While
+
         End Sub
+
+
 
         ''' <summary>
         ''' Creates dummy files to pre-populate Vault with or creates files named "Replace With " to denote where files already exist.
@@ -460,9 +457,9 @@ Namespace CreateAssemblyFromExcelAddin
 
                 Else
                     'file is new.
-                    Dim i As Integer = PartsList.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
+                    Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
                     If Not i = -1 Then
-                        AligniPropertyValues(SubObject, PartsList(i))
+                        AligniPropertyValues(SubObject, PartsListFromExcel(i))
                     End If
                 End If
 
@@ -597,8 +594,12 @@ Namespace CreateAssemblyFromExcelAddin
             Return foundfilename
         End Function
 
-        
-
+        Private Sub UpdateStatusBar(percent As Double, Optional Message As String = "")
+            m_inventorApplication.StatusBarText = Message + " (" + percent.ToString("P1") + ")"
+        End Sub
+        Private Sub UpdateStatusBar(Optional Message As String = "")
+            m_inventorApplication.StatusBarText = Message
+        End Sub
 #End Region
 #Region "Folder Structure Parser from console app"
         ''' <summary>
@@ -608,67 +609,67 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="level">the structure level we are currently at</param>
         ''' <remarks></remarks>
         Public Sub ParseFolders(ByVal Dir As DirectoryInfo, ByVal Level As Long)
-            Try
-                If Not Dir.Name.Contains("Superseded") Then
-                    Dim friendlydirname As String = GetFriendlyDirName(Dir.Name)
-                    Dim friendlyparentdirname As String = String.Empty
-                    If Not Dir.Parent Is Nothing Then
-                        friendlyparentdirname = GetFriendlyDirName(Dir.Parent.Name)
-                    Else
-                        friendlyparentdirname = parentAssemblyFilename
-                    End If
-                    'need to account for instances where the "AS-" file isn't the first we'll find
-                    Dim thisAssy As FileInfo = (From a As FileInfo In Dir.GetFiles()
-                                               Where GetFriendlyName(a.Name) = friendlydirname And _
-                                               Not a.Name.Contains("IL") And _
-                                               Not a.Name.Contains("DL") And _
-                                               Not a.Name.Contains("SP") And _
-                                               (getsheetnum(a.Name) <= 1)
-                                               Select a).FirstOrDefault
-                    If Not thisAssy Is Nothing Then
-                        CompleteList.Add(New SubObjectCls() With
-                                                    {.PartNo = GetFriendlyName(thisAssy.Name),
-                                                        .ParentAssembly = friendlyparentdirname,
-                                                        .Level = Level + 1})
-                    Else
-                        'the assembly drawing probably exists somewhere else in the structure so for now we'll assume it's just "missing"
-                        thisAssy = New FileInfo(Dir.FullName & "\" & GetFriendlyDirName(Dir.Name) & ".txt")
-                        CompleteList.Add(New SubObjectCls() With
-                            {.PartNo = GetFriendlyName(thisAssy.Name),
-                                .ParentAssembly = friendlyparentdirname,
-                                .Level = Level + 1})
-                    End If
-                    For Each file As FileInfo In Dir.GetFiles()
-                        If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name Then
-                            'if the directory name is the same as the assembly name then the parentassembly is the folder above!
-                            Dim friendlyfilename As String = GetFriendlyName(file.Name)
-                            If friendlydirname = friendlyfilename Then 'parent assembly in this folder
-                                If getsheetnum(file.Name) <= 1 Then
-                                    CompleteList.Add(New SubObjectCls() With
-                                                     {.PartNo = friendlyfilename,
-                                                      .ParentAssembly = friendlyparentdirname,
-                                                      .Level = Level + 1})
-                                End If
-                            Else
-                                If getsheetnum(file.Name) <= 1 Then
-                                    CompleteList.Add(New SubObjectCls() With
-                                                     {.PartNo = friendlyfilename,
-                                                      .ParentAssembly = friendlydirname,
-                                                      .Level = Level + 2})
-                                End If
+            'Try
+            If Not Dir.Name.Contains("Superseded") Then
+                Dim friendlydirname As String = GetFriendlyDirName(Dir.Name)
+                Dim friendlyparentdirname As String = String.Empty
+                If Not Dir.Parent Is Nothing Then
+                    friendlyparentdirname = GetFriendlyDirName(Dir.Parent.Name)
+                Else
+                    friendlyparentdirname = parentAssemblyFilename
+                End If
+                'need to account for instances where the "AS-" file isn't the first we'll find
+                Dim thisAssy As FileInfo = (From a As FileInfo In Dir.GetFiles()
+                                           Where GetFriendlyName(a.Name) = friendlydirname And _
+                                           Not a.Name.Contains("IL") And _
+                                           Not a.Name.Contains("DL") And _
+                                           Not a.Name.Contains("SP") And _
+                                           (getsheetnum(a.Name) <= 1)
+                                           Select a).FirstOrDefault
+                If Not thisAssy Is Nothing Then
+                    CompleteListFromSystemDrive.Add(New SubObjectCls() With
+                                                {.PartNo = GetFriendlyName(thisAssy.Name),
+                                                    .ParentAssembly = friendlyparentdirname,
+                                                    .Level = Level + 1})
+                Else
+                    'the assembly drawing probably exists somewhere else in the structure so for now we'll assume it's just "missing"
+                    thisAssy = New FileInfo(Dir.FullName & "\" & GetFriendlyDirName(Dir.Name) & ".txt")
+                    CompleteListFromSystemDrive.Add(New SubObjectCls() With
+                        {.PartNo = GetFriendlyName(thisAssy.Name),
+                            .ParentAssembly = friendlyparentdirname,
+                            .Level = Level + 1})
+                End If
+                For Each file As FileInfo In Dir.GetFiles()
+                    If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name Then
+                        'if the directory name is the same as the assembly name then the parentassembly is the folder above!
+                        Dim friendlyfilename As String = GetFriendlyName(file.Name)
+                        If friendlydirname = friendlyfilename Then 'parent assembly in this folder
+                            If getsheetnum(file.Name) <= 1 Then
+                                CompleteListFromSystemDrive.Add(New SubObjectCls() With
+                                                 {.PartNo = friendlyfilename,
+                                                  .ParentAssembly = friendlyparentdirname,
+                                                  .Level = Level + 1})
+                            End If
+                        Else
+                            If getsheetnum(file.Name) <= 1 Then
+                                CompleteListFromSystemDrive.Add(New SubObjectCls() With
+                                                 {.PartNo = friendlyfilename,
+                                                  .ParentAssembly = friendlydirname,
+                                                  .Level = Level + 2})
                             End If
                         End If
-                    Next
-                    For Each subDir As DirectoryInfo In Dir.GetDirectories()
-                        If Not subDir.Name.Contains("Superseded") Then
-                            ParseFolders(subDir, Level + 1)
-                        End If
-                    Next
-                End If
-                highestlevel += 1
-            Catch ex As Exception
-                MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
-            End Try
+                    End If
+                Next
+                For Each subDir As DirectoryInfo In Dir.GetDirectories()
+                    If Not subDir.Name.Contains("Superseded") Then
+                        ParseFolders(subDir, Level + 1)
+                    End If
+                Next
+            End If
+            highestlevel += 1
+            'Catch ex As Exception
+            '    MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
+            'End Try
             'Return info
         End Sub
 
@@ -738,6 +739,10 @@ Namespace CreateAssemblyFromExcelAddin
             Return CInt(f)
         End Function
 #End Region
+
+        
+
+        
 
         
 
