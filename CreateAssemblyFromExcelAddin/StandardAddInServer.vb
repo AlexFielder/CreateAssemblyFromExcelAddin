@@ -40,6 +40,7 @@ Namespace CreateAssemblyFromExcelAddin
         Private FileIterations As List(Of Vault.Currency.Entities.FileIteration) = New List(Of Vault.Currency.Entities.FileIteration)
         Private FolderIdsToFolderEntities As IDictionary(Of Long, Vault.Currency.Entities.Folder)
         Private AssociationArrays As ACW.FileAssocArray() = Nothing
+        Private associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
         Public Shared selectedfile As ListBoxFileItem = Nothing
         Public Shared FoundList As List(Of ListBoxFileItem) = Nothing
 #Region "ApplicationAddInServer Members"
@@ -247,7 +248,7 @@ Namespace CreateAssemblyFromExcelAddin
             ParseFolders(DirStruct, level)
             'here is where we need to query the vault/download files
             BeginRePopulateCompleteList()
-
+            GetLatestFilesFromVault()
             Dim grouped = CompleteListFromSystemDrive.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
 
             For Each group In grouped
@@ -305,59 +306,24 @@ Namespace CreateAssemblyFromExcelAddin
                     Next
                 End If
             Next
-            'next we need to remove those files who have parents present in the CompleteListFromSystemDrive list from the VaultedFileList.
-            For Each SubObj As SubObjectCls In CompleteListFromSystemDrive
-                If (associationsByFile.ContainsKey(selectedfile.File.EntityIterationId)) Then
+        End Sub
 
-                End If
+        ''' <summary>
+        ''' Performs the vault equivalent of a GET on the vaulted files we found.
+        ''' </summary>
+        ''' <remarks></remarks>
+        Private Sub GetLatestFilesFromVault()
+            Dim percent As Double = Nothing
+            Dim i As Integer = 0
+            For Each File As ADSK.File In VaultedFileList
+                percent = (CDbl(i) / VaultedFileList.Count)
+                UpdateStatusBar(percent, "Performing a GET from the Vault... Please Wait")
+                If File.Cloaked Then Continue For
+                Dim settings As Vault.Settings.AcquireFilesSettings = New Vault.Settings.AcquireFilesSettings(m_conn)
+                settings.AddFileToAcquire(New VDF.Vault.Currency.Entities.FileIteration(m_conn, File), VDF.Vault.Settings.AcquireFilesSettings.AcquisitionOption.Download)
+                m_conn.FileManager.AcquireFiles(settings)
+                i += 1
             Next
-
-
-            'this whole thing is broken
-            'For i As Integer = 3 To FileList.Count - 1
-            '    'If results.Count > 1 Then
-            '    Dim fileForm As New FileSelectionForm(m_conn)
-            '    Dim PotentialMatches As Integer = 0
-            '    For Each file As Autodesk.Connectivity.WebServices.File In results
-            '        If file.Name.Contains(FileList(i).Name) Then
-            '            Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, file))
-            '            fileForm.SearchResultsListBox.Items.Add(fileItem)
-            '            PotentialMatches += 1
-            '        End If
-            '    Next
-            '    If fileForm.SearchResultsListBox.Items.Count = 1 Then
-            '        'only one file added so it must be the file we need.
-            '        selectedfile = DirectCast(fileForm.SearchResultsListBox.Items(0), ListBoxFileItem)
-            '    ElseIf fileForm.SearchResultsListBox.Items.Count > 1 Then
-            '        'create a form object to display found items
-            '        Dim selectedfilename As String = String.Empty
-            '        'update the items count label
-            '        fileForm.m_SearchingForLabel.Text = "Searching for filename(s) containing: " + FileList(i).Name
-            '        fileForm.m_itemsCountLabel.Text = IIf((PotentialMatches > 0), PotentialMatches + " Items", "0 Items")
-            '        'display the form and wait for it to close using the ShowDialog() method.
-            '        fileForm.ShowDialog()
-            '    Else
-            '        NoMatch = True
-            '    End If
-            '    'ElseIf results.Count = 1 Then
-            '    'get the first and only file we found whose name contains .iam or .ipt
-            '    'Dim foundfile As Autodesk.Connectivity.WebServices.File = results(0)
-            '    'Dim fileItem As New ListBoxFileItem(New VDF.Vault.Currency.Entities.FileIteration(m_conn, foundfile))
-            '    'selectedfile = fileItem
-            '    'End If
-            '    If selectedfile IsNot Nothing Then
-            '        Throw New NotImplementedException()
-            '        'Try
-            '        'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(x) x).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
-            '        'selectedfile.folder = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = selectedfile.File.FolderId).Select(Function(k) k.Value).First()
-
-            '        'Catch ex As Exception
-            '        '    MessageBox.Show("the error was: " + ex.Message + " " + ex.StackTrace)
-            '        '    Throw
-
-            '        'End Try
-            '    End If
-            'Next
         End Sub
 
         ''' <summary>
@@ -764,6 +730,8 @@ Namespace CreateAssemblyFromExcelAddin
             Return CInt(f)
         End Function
 #End Region
+
+        
 
         
 
