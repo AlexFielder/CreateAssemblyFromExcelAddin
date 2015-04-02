@@ -40,6 +40,7 @@ Namespace CreateAssemblyFromExcelAddin
         Private FileIterations As List(Of Vault.Currency.Entities.FileIteration) = New List(Of Vault.Currency.Entities.FileIteration)
         Private FolderIdsToFolderEntities As IDictionary(Of Long, Vault.Currency.Entities.Folder)
         Private AssociationArrays As ACW.FileAssocArray() = Nothing
+        Private FileAssocLiteArrays As ACW.FileAssocLite() = Nothing
         Private associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
         Public Shared selectedfile As ListBoxFileItem = Nothing
         Public Shared FoundList As List(Of ListBoxFileItem) = Nothing
@@ -277,35 +278,37 @@ Namespace CreateAssemblyFromExcelAddin
                 VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
                 VaultedFileList = VaultedFileList.FindAll(Function(x) x.Name.EndsWith(".ipt") Or x.Name.EndsWith(".iam"))
             End If
+            FileAssocLiteArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationLitesByIds(VaultedFileList.Select(Function(x) x.Id).ToArray(), FileAssocAlg.Actual, FileAssociationTypeEnum.All, True, FileAssociationTypeEnum.All, True, False, False, False)
 
-            AssociationArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationsByIds(
-                VaultedFileList.Select(Function(x) x.Id).ToArray(),
-                FileAssociationTypeEnum.None,
-                False,
-                FileAssociationTypeEnum.Dependency,
-                True,
-                False,
-                False)
+            'deprecated, using GetFileAssociationLitesByIds instead.
+            'AssociationArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationsByIds(
+            '    VaultedFileList.Select(Function(x) x.Id).ToArray(),
+            '    FileAssociationTypeEnum.None,
+            '    False,
+            '    FileAssociationTypeEnum.Dependency,
+            '    True,
+            '    False,
+            '    False)
 
-            ' organize the return values by the parent file
-            Dim associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
-            For Each array As FileAssocArray In AssociationArrays
-                If Not array.FileAssocs Is Nothing Then
-                    For Each association As FileAssoc In array.FileAssocs
-                        Dim parent As ACW.File = association.ParFile
-                        If associationsByFile.ContainsKey(parent.Id) Then
-                            ' parent is already in the hashtable, add an new child entry
-                            Dim list As List(Of Vault.Currency.Entities.FileIteration) = associationsByFile(parent.Id)
-                            list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
-                        Else
-                            ' add the parent to the hashtable.
-                            Dim list As New List(Of Vault.Currency.Entities.FileIteration)()
-                            list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
-                            associationsByFile.Add(parent.Id, list)
-                        End If
-                    Next
-                End If
-            Next
+            '' organize the return values by the parent file
+            'Dim associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
+            'For Each array As FileAssocArray In AssociationArrays
+            '    If Not array.FileAssocs Is Nothing Then
+            '        For Each association As FileAssoc In array.FileAssocs
+            '            Dim parent As ACW.File = association.ParFile
+            '            If associationsByFile.ContainsKey(parent.Id) Then
+            '                ' parent is already in the hashtable, add an new child entry
+            '                Dim list As List(Of Vault.Currency.Entities.FileIteration) = associationsByFile(parent.Id)
+            '                list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
+            '            Else
+            '                ' add the parent to the hashtable.
+            '                Dim list As New List(Of Vault.Currency.Entities.FileIteration)()
+            '                list.Add(New Vault.Currency.Entities.FileIteration(m_conn, association.CldFile))
+            '                associationsByFile.Add(parent.Id, list)
+            '            End If
+            '        Next
+            '    End If
+            'Next
         End Sub
 
         ''' <summary>
@@ -336,7 +339,7 @@ Namespace CreateAssemblyFromExcelAddin
             UpdateStatusBar("Getting Initial File details (If available) From Vault... Please Wait")
             Dim NonVaultedFileNames As String() = CompleteListFromSystemDrive.Select(Function(x) x.PartNo).ToArray()
             NonVaultedFileNames = NonVaultedFileNames.Distinct.ToArray()
-            'build the search based on our range of non-vaulted filenames.
+            'build the search based on our range of Distinct (potentially non-vaulted) filenames.
             Dim conditions As SrchCond() = New SrchCond(NonVaultedFileNames.Length - 1) {}
             Dim percent As Double = Nothing
             For i As Integer = 0 To NonVaultedFileNames.Length - 1
@@ -378,6 +381,10 @@ Namespace CreateAssemblyFromExcelAddin
             Dim basepartname As String = String.Empty
             Dim newfilename As String = String.Empty
             Try
+                Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
+                If Not i = -1 Then
+                    AligniPropertyValues(SubObject, PartsListFromExcel(i))
+                End If
                 If SubObject.PartNo.StartsWith("AS-", StringComparison.Ordinal) Then
                     If SubObject.LegacyDescr.ToLower.Contains("cable") Then
                         newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
@@ -443,16 +450,17 @@ Namespace CreateAssemblyFromExcelAddin
             Dim PosnMatrix As Matrix
             Try
                 Dim newfilename As String = CreateAssemblyComponents(SubObject)
-                If Not System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then
-                    'file is outside the working folder for this assembly
+                'MOVED INTO CREATEASSEMBLYCOMPONENTS()
+                'If Not System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then
+                '    'file is outside the working folder for this assembly
 
-                Else
-                    'file is new.
-                    Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
-                    If Not i = -1 Then
-                        AligniPropertyValues(SubObject, PartsListFromExcel(i))
-                    End If
-                End If
+                'Else
+                '    'file is new.
+                '    Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
+                '    If Not i = -1 Then
+                '        AligniPropertyValues(SubObject, PartsListFromExcel(i))
+                '    End If
+                'End If
 
                 PosnMatrix = m_inventorApplication.TransientGeometry.CreateMatrix
                 If ParentName = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName) Then
