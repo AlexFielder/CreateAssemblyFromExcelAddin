@@ -1,5 +1,6 @@
 Imports System.Collections.Generic
 Imports System.Drawing
+Imports System.Data
 Imports System.IO
 Imports System.Linq
 Imports System.Runtime.InteropServices
@@ -173,6 +174,41 @@ Namespace CreateAssemblyFromExcelAddin
             'XTVB.InventorApplication = ThisApplication
             ProjectCode = InputBox("Which project?", "4 Letter Project Code", "CODE")
             Dim filetab As String = ProjectCode + "-MODELLING-BASELINE"
+            'start faster excel implementation (FEI)
+            Dim XLFile As New FileToProcess()
+            XLFile.FileName = "C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx"
+            Dim percent As Double = Nothing
+
+            'not working for the time being.
+
+            'Dim xlds As DataSet = XLFile.GetExcelData(filetab)
+            'Dim ExcelDataTable As DataTable = xlds.Tables(0)
+
+            'Dim rowNum As Integer = 3
+            'For Each row As DataRow In ExcelDataTable.Rows
+            '    percent = (CDbl(rowNum) / ExcelDataTable.Rows.Count())
+            '    If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
+            '    Console.WriteLine(row("DRAWING NUMBER").ToString())
+            '    Dim SO As SubObjectCls = New SubObjectCls()
+            '    'Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
+            '    If String.IsNullOrEmpty(row("DRAWING NUMBER").ToString()) Then Exit For
+            '    SO.PartNo = IIf(row("DRAWING NUMBER").ToString(), "", row("DRAWING NUMBER").ToString())
+            '    'Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
+            '    SO.LegacyDescr = IIf(String.IsNullOrEmpty(row("DRAWING TITLE").ToString()), "", row("DRAWING TITLE").ToString())
+            '    'Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
+            '    SO.LegacyRev = IIf(String.IsNullOrEmpty(row("DRAWING REV").ToString()), "", row("DRAWING REV").ToString())
+            '    'Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
+            '    SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(row("LEGACY DRAWING NUMBER").ToString()), "", row("LEGACY DRAWING NUMBER").ToString())
+            '    'Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
+            '    SO.ParentAssembly = IIf(String.IsNullOrEmpty(row("PARENT").ToString()), "", row("PARENT").ToString())
+            '    'Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
+            '    SO.FileName = IIf(String.IsNullOrEmpty(row("VAULTED NAME").ToString()), "", row("VAULTED NAME").ToString())
+            '    PartsListFromExcel.Add(SO)
+            '    rowNum += 1
+            'Next
+            StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
+
+            'end FEI
             Dim oXL As Excel.Application
             Dim oWB As Excel.Workbook
             Dim oSheet As Excel.Worksheet
@@ -180,17 +216,18 @@ Namespace CreateAssemblyFromExcelAddin
 
             ' Start Excel and get Application object.
             oXL = CreateObject("Excel.Application")
-            oXL.Visible = True
+            oXL.Visible = False
 
             oWB = oXL.Workbooks.Open("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx")
             oSheet = oXL.Sheets(filetab)
             oSheet.Activate()
             oXL.Calculation = Excel.XlCalculation.xlCalculationManual
+            oXL.ScreenUpdating = False
             'FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
-            Dim percent As Double = Nothing
+
             For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
                 percent = (CDbl(MyRow) / oSheet.UsedRange.Rows.Count())
-                UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
+                If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
                 Dim SO As SubObjectCls = New SubObjectCls()
                 Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
                 If String.IsNullOrEmpty(PartNo.Value2) Then Exit For
@@ -207,8 +244,9 @@ Namespace CreateAssemblyFromExcelAddin
                 SO.FileName = IIf(String.IsNullOrEmpty(FileName.Value2), "", FileName.Value2)
                 PartsListFromExcel.Add(SO)
             Next
-            StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
+
             oXL.Calculation = Excel.XlCalculation.xlCalculationAutomatic
+            oXL.ScreenUpdating = True
             oWB.Close(False)
             oSheet = Nothing
             oWB = Nothing
@@ -260,12 +298,15 @@ Namespace CreateAssemblyFromExcelAddin
             For Each Group In grouped
                 If Group.Key > 1 Then
                     For Each item As SubObjectCls In Group
-                        Dim File As ACW.File = VaultedFileList.Select(Function(vaultedfile) vaultedfile.Name = item.FileName)
+                        Dim File As ACW.File = (From f In VaultedFileList
+                                               Where f.Name = item.FileName
+                                               Select f).FirstOrDefault()
                         If Not File Is Nothing Then
-                            Dim ids As Long() = FileAssocLiteArrays.Select(Function(f) f).Where(Function(y) y.ParFileId = File.Id).Select(Function(id) id.ParFileId).ToArray()
-                            'Dim ids As FileAssocLite() = FileAssocLiteArrays.Select(Function(AssocLite As FileAssocLite) AssocLite).Where(Function(fileassoc) fileassoc.ParFileId = File.Id).ToArray()
-                            If Not ids Is Nothing Then
-
+                            Dim ids As Long() = FileAssocLiteArrays.Select(
+                                Function(EachFileAssocLite) EachFileAssocLite).Where(
+                                Function(FileAssocLiteToCheck) FileAssocLiteToCheck.ParFileId = File.Id).Select(
+                                Function(ChildFileAssoc) ChildFileAssoc.CldFileId).ToArray()
+                            If Not ids.Length = 0 Then
                                 Dim Linkedfiles = VaultedFileList.Where(Function(x) ids.Contains(x.Id))
                                 For Each RemoveableItem In Linkedfiles
                                     Dim FileToRemove = (From f In EditedListFromSystemDrive
@@ -275,7 +316,6 @@ Namespace CreateAssemblyFromExcelAddin
                                 Next
                             End If
                         End If
-                        'Dim id As Long = FileAssocLiteArrays.Select(Function(x) x.ParFileId = VaultedFileList.Select(Function(file) file.Name = item.FileName).FirstOrDefault())
                     Next
                 End If
             Next
@@ -329,7 +369,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim i As Integer = 0
             For Each File As ADSK.File In VaultedFileList
                 percent = (CDbl(i) / VaultedFileList.Count)
-                UpdateStatusBar(percent, "Performing a GET from the Vault... Please Wait")
+                If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Performing a GET from the Vault... Please Wait")
                 If File.Cloaked Then Continue For
                 Dim settings As Vault.Settings.AcquireFilesSettings = New Vault.Settings.AcquireFilesSettings(m_conn)
                 settings.AddFileToAcquire(New VDF.Vault.Currency.Entities.FileIteration(m_conn, File), VDF.Vault.Settings.AcquireFilesSettings.AcquisitionOption.Download)
@@ -352,7 +392,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim conditions As SrchCond() = New SrchCond(NonVaultedFileNames.Length - 1) {}
             Dim percent As Double = Nothing
             For i As Integer = 0 To NonVaultedFileNames.Length - 1
-                UpdateStatusBar(percent, "Building Initial Search Conditions... Please Wait")
+                'UpdateStatusBar(percent, "Building Initial Search Conditions... Please Wait")
                 Dim searchCondition As New SrchCond()
                 searchCondition.PropDefId = 9
                 'filename
@@ -365,14 +405,14 @@ Namespace CreateAssemblyFromExcelAddin
             Dim bookmark As String = String.Empty
             Dim status As SrchStatus = Nothing
             VaultedFileList = New List(Of ACW.File)()
-            
+
             While status Is Nothing OrElse VaultedFileList.Count < status.TotalHits
                 Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark, _
                     status)
                 If files IsNot Nothing Then
                     VaultedFileList.AddRange(files)
                     percent = (CDbl(VaultedFileList.Count) / status.TotalHits)
-                    UpdateStatusBar(percent, "Searching the Ether... Please Wait")
+                    If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Searching the Vault... Please Wait")
                 End If
             End While
             'get all FileIterations
@@ -392,7 +432,9 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <remarks></remarks>
         Private Function CreateAssemblyComponents(SubObject As SubObjectCls) As String
             Dim basepartname As String = String.Empty
+            Dim basecablepartname As String = String.Empty
             Dim newfilename As String = String.Empty
+            Dim NewCablePartName As String = String.Empty
             Try
                 Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
                 If Not i = -1 Then
@@ -403,6 +445,8 @@ Namespace CreateAssemblyFromExcelAddin
                         If SubObject.LegacyDescr.ToLower.Contains("cable") Then
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
                             basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.iam"
+                            basecablepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.ipt"
+                            NewCablePartName = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
                         Else
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
                             basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
@@ -439,6 +483,10 @@ Namespace CreateAssemblyFromExcelAddin
                     If tmpstr = String.Empty Then
                         'it doesn't exist anywhere else in the Local Vault Working Folder
                         System.IO.File.Copy(basepartname, newfilename)
+                        If Not NewCablePartName = String.Empty Then
+                            System.IO.File.Copy(basecablepartname, NewCablePartName)
+                            NewCablePartName = Nothing
+                        End If
                     Else
                         'it does exist and we (Currently) are creating a placeholder file to replace later, although this creates its own issues!
                         newfilename = foundfile.FullName
@@ -480,11 +528,10 @@ Namespace CreateAssemblyFromExcelAddin
                 Else
                     Dim foldername As String = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = VaultedFileList.Item(i).FolderId).Select(Function(k) k.Value).First().FullName
                     foldername = foldername.Replace("/", "\").Replace("$", "C:\Legacy Vault Working Folder\")
-                    newfilename = foldername & VaultedFileList.Item(i).Name
+                    newfilename = foldername & "\" & VaultedFileList.Item(i).Name
                     'Dim FileId As Long = VaultedFileList.Item(i).Id
                     'VaultedFileList.RemoveAll(Function(x) )
                 End If
-                'this is the stage where we need to figure out what to do with existing vaulted files.
 
                 PosnMatrix = m_inventorApplication.TransientGeometry.CreateMatrix
                 If ParentName = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName) Then
@@ -494,8 +541,34 @@ Namespace CreateAssemblyFromExcelAddin
                         realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                         realOccStr = realOcc.Name
                         If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
-                            System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then 'assign iproperties to new parts
-                            AssignIProperties(realOcc, SubObject)
+                            System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
+                            'cable assemblies in parent assembly
+                            If Not SubObject.LegacyDescr Is Nothing Then
+                                If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
+                                    Dim occNum As Integer = 1
+                                    For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
+                                        If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
+                                            If System.IO.File.Exists(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt") Then
+                                                SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                            Else
+                                                SubcompOcc.Definition.Document.saveas(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", False)
+                                                SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                            End If
+                                            Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
+                                            'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
+                                            Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
+                                            If Not CableIdIdx = -1 Then
+                                                Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
+                                                cableId.Value = SubObject.LegacyDrawingNo
+                                            End If
+                                            AssignIProperties(SubcompOcc, SubObject)
+                                            occNum += 1
+                                        End If
+                                    Next
+                                End If
+                            Else
+                                AssignIProperties(realOcc, SubObject)
+                            End If
                         End If
                     Catch ex As Exception
                         MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
@@ -523,8 +596,33 @@ Namespace CreateAssemblyFromExcelAddin
                             realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                             realOccStr = realOcc.Name
                             If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
-                                System.IO.Path.GetDirectoryName(newfilename).Contains(ProjectCode) Then 'assign iproperties to new parts
-                                AssignIProperties(realOcc, SubObject)
+                                System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
+                                If Not SubObject.LegacyDescr Is Nothing Then
+                                    If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
+                                        Dim occNum As Integer = 1
+                                        For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
+                                            If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
+                                                If System.IO.File.Exists(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt") Then
+                                                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                                Else
+                                                    SubcompOcc.Definition.Document.saveas(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", False)
+                                                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                                End If
+                                                Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
+                                                'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
+                                                Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
+                                                If Not CableIdIdx = -1 Then
+                                                    Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
+                                                    cableId.Value = SubObject.LegacyDrawingNo
+                                                End If
+                                                AssignIProperties(SubcompOcc, SubObject)
+                                                occNum += 1
+                                            End If
+                                        Next
+                                    End If
+                                Else
+                                    AssignIProperties(realOcc, SubObject)
+                                End If
                             End If
                         End If
                     Catch ex As Exception
@@ -558,14 +656,24 @@ Namespace CreateAssemblyFromExcelAddin
             Try
                 Dim invProjProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{32853F0F-3444-11D1-9E93-0060B03C1CA6}")
                 Dim invSummaryiProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}")
-                'Project iProperties
                 invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kPartNumberDesignTrackingProperties).Value = SubObject.PartNo 'part number
-                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = SubObject.LegacyDescr 'description
+                If SubObject.LegacyDescr Is Nothing Then
+                    invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = "POPULATED BY CAFE TOOL" 'description
+                Else
+                    invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = SubObject.LegacyDescr 'description
+                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = SubObject.LegacyDescr 'title
+                End If
                 invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kProjectDesignTrackingProperties).Value = "A90.1" 'project
-                'Summary iProperties
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = SubObject.LegacyRev 'revision
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = SubObject.LegacyDrawingNo 'subject
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = SubObject.LegacyDescr 'title
+                If SubObject.LegacyRev Is Nothing Then
+                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = "A" 'revision
+                Else
+                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = SubObject.LegacyRev 'revision
+                End If
+                If SubObject.LegacyDrawingNo Is Nothing Then
+                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = "HR/0/#####" 'subject
+                Else
+                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = SubObject.LegacyDrawingNo 'subject
+                End If
                 invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kCommentsSummaryInformation).Value = "MODELLED FROM DRAWINGS"
             Catch ex As Exception
                 MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
@@ -643,12 +751,13 @@ Namespace CreateAssemblyFromExcelAddin
                 End If
                 'need to account for instances where the "AS-" file isn't the first we'll find
                 Dim thisAssy As FileInfo = (From a As FileInfo In Dir.GetFiles()
-                                           Where GetFriendlyName(a.Name) = friendlydirname And _
-                                           Not a.Name.Contains("IL") And _
-                                           Not a.Name.Contains("DL") And _
-                                           Not a.Name.Contains("SP") And _
-                                           (getsheetnum(a.Name) <= 1)
-                                           Select a).FirstOrDefault
+                                            Where GetFriendlyName(a.Name) = friendlydirname And
+                                            Not a.Name.Contains("IL") And
+                                            Not a.Name.Contains("DL") And
+                                            Not a.Name.Contains("SP") And
+                                            Not a.Name.ToLower.Contains("missing") And
+                                            (getsheetnum(a.Name) <= 1)
+                                            Select a).FirstOrDefault
                 If Not thisAssy Is Nothing Then
                     CompleteListFromSystemDrive.Add(New SubObjectCls() With
                                                     {.PartNo = GetFriendlyName(thisAssy.Name),
@@ -657,48 +766,48 @@ Namespace CreateAssemblyFromExcelAddin
                                                      .FileName = IIf(GetFriendlyName(thisAssy.Name).ToLower.StartsWith("as-"),
                                                                      GetFriendlyName(thisAssy.Name) & ".iam",
                                                                      GetFriendlyName(thisAssy.Name) & ".ipt")
-                                                }
-                                            )
+                                                    }
+                                                )
                 Else
                     'the assembly drawing probably exists somewhere else in the structure so for now we'll assume it's just "missing"
                     thisAssy = New FileInfo(Dir.FullName & "\" & GetFriendlyDirName(Dir.Name) & ".txt")
                     CompleteListFromSystemDrive.Add(New SubObjectCls() With
-                        {.PartNo = GetFriendlyName(thisAssy.Name),
-                         .ParentAssembly = friendlyparentdirname,
-                         .Level = Level + 1,
-                         .FileName = IIf(GetFriendlyName(thisAssy.Name).ToLower.StartsWith("as-"),
-                                         GetFriendlyName(thisAssy.Name) & ".iam",
-                                         GetFriendlyName(thisAssy.Name) & ".ipt")
+                                                    {.PartNo = GetFriendlyName(thisAssy.Name),
+                                                     .ParentAssembly = friendlyparentdirname,
+                                                     .Level = Level + 1,
+                                                     .FileName = IIf(GetFriendlyName(thisAssy.Name).ToLower.StartsWith("as-"),
+                                                                     GetFriendlyName(thisAssy.Name) & ".iam",
+                                                                     GetFriendlyName(thisAssy.Name) & ".ipt")
                         }
                     )
                 End If
                 For Each file As FileInfo In Dir.GetFiles()
-                    If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name Then
+                    If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name And Not file.Name.ToLower.Contains("missing") Then
                         'if the directory name is the same as the assembly name then the parentassembly is the folder above!
                         Dim friendlyfilename As String = GetFriendlyName(file.Name)
                         If friendlydirname = friendlyfilename Then 'parent assembly in this folder
                             If getsheetnum(file.Name) <= 1 Then
                                 CompleteListFromSystemDrive.Add(New SubObjectCls() With
-                                                 {.PartNo = friendlyfilename,
-                                                  .ParentAssembly = friendlyparentdirname,
-                                                  .Level = Level + 1,
-                                                  .FileName = IIf(GetFriendlyName(file.Name).ToLower.StartsWith("as-"),
-                                                                  GetFriendlyName(file.Name) & ".iam",
-                                                                  GetFriendlyName(file.Name) & ".ipt")
-                                                 }
-                                             )
+                                                                {.PartNo = friendlyfilename,
+                                                                 .ParentAssembly = friendlyparentdirname,
+                                                                 .Level = Level + 1,
+                                                                 .FileName = IIf(GetFriendlyName(file.Name).ToLower.StartsWith("as-"),
+                                                                                 GetFriendlyName(file.Name) & ".iam",
+                                                                                 GetFriendlyName(file.Name) & ".ipt")
+                                                                }
+                                                            )
                             End If
                         Else
                             If getsheetnum(file.Name) <= 1 Then
                                 CompleteListFromSystemDrive.Add(New SubObjectCls() With
-                                                 {.PartNo = friendlyfilename,
-                                                  .ParentAssembly = friendlydirname,
-                                                  .Level = Level + 2,
-                                                  .FileName = IIf(file.Name.ToLower.StartsWith("AS-"),
-                                                                  GetFriendlyName(file.Name) & ".iam",
-                                                                  GetFriendlyName(file.Name) & ".ipt")
-                                                 }
-                                             )
+                                                                {.PartNo = friendlyfilename,
+                                                                 .ParentAssembly = friendlydirname,
+                                                                 .Level = Level + 2,
+                                                                 .FileName = IIf(file.Name.ToLower.StartsWith("AS-"),
+                                                                                 GetFriendlyName(file.Name) & ".iam",
+                                                                                 GetFriendlyName(file.Name) & ".ipt")
+                                                                }
+                                                            )
                             End If
                         End If
                     End If
@@ -799,15 +908,15 @@ Namespace CreateAssemblyFromExcelAddin
         End Function
 #End Region
 
-        
 
-        
 
-        
 
-        
 
-        
+
+
+
+
+
 
     End Class
 #Region "Sub Object Class"
@@ -1323,5 +1432,272 @@ Namespace CreateAssemblyFromExcelAddin
         End Sub
     End Class
 
+#End Region
+#Region "Excel helper Class"
+    Friend Class ExcelWrapper
+        Implements IDisposable
+        Private Class Window
+            <DllImport("user32.dll", SetLastError:=True)> _
+            Private Shared Function FindWindow(lpClassName As String, lpWindowName As String) As IntPtr
+            End Function
+
+            <DllImport("user32.dll")> _
+            Private Shared Function GetWindowThreadProcessId(hWnd As IntPtr, ByRef ProcessID As IntPtr) As IntPtr
+            End Function
+
+            Public Shared Function GetWindowThreadProcessId(hWnd As IntPtr) As IntPtr
+                Dim processID As IntPtr
+                Dim returnResult As IntPtr = GetWindowThreadProcessId(hWnd, processID)
+                Return processID
+            End Function
+
+            Public Shared Function FindExcel(caption As String) As IntPtr
+                Dim hWnd As IntPtr = FindWindow("XLMAIN", caption)
+                Return hWnd
+            End Function
+        End Class
+
+        Private m_excel As Excel.Application
+        Private m_windowHandle As IntPtr
+        Private m_processID As IntPtr
+        Private Const ExcelWindowCaption As String = "Running From CAFE Tool O_o"
+
+        Public Sub New()
+            m_excel = CreateExcelApplication()
+            m_windowHandle = Window.FindExcel(ExcelWindowCaption)
+            m_processID = Window.GetWindowThreadProcessId(m_windowHandle)
+        End Sub
+
+        Private Function CreateExcelApplication() As Excel.Application
+            Dim excel As New Excel.Application
+            excel.Caption = ExcelWindowCaption
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            excel.AlertBeforeOverwriting = False
+            excel.AskToUpdateLinks = False
+            Return excel
+        End Function
+
+        Public ReadOnly Property Excel() As Excel.Application
+            Get
+                Return Me.m_excel
+            End Get
+        End Property
+
+        Public ReadOnly Property ProcessID() As Integer
+            Get
+                Return Me.m_processID.ToInt32()
+            End Get
+        End Property
+
+        Public ReadOnly Property WindowHandle() As Integer
+            Get
+                Return Me.m_windowHandle.ToInt32()
+            End Get
+        End Property
+
+        Public Sub Dispose() Implements IDisposable.Dispose
+            If m_excel IsNot Nothing Then
+                m_excel.Workbooks.Close()
+                m_excel.Quit()
+                Marshal.ReleaseComObject(m_excel)
+                m_excel = Nothing
+                GC.Collect()
+                GC.WaitForPendingFinalizers()
+                GC.Collect()
+                GC.WaitForPendingFinalizers()
+                Try
+                    Dim processToKill As Process = Process.GetProcessById(Me.ProcessID)
+
+                    If processToKill IsNot Nothing Then
+                        processToKill.Kill()
+                    End If
+                Catch
+                    Throw
+                End Try
+            End If
+        End Sub
+    End Class
+#End Region
+#Region "Excel Helper Class implementation"
+    Class FileToProcess
+        Public Property FileName() As String
+            Get
+                Return m_FileName
+            End Get
+            Set(value As String)
+                m_FileName = Value
+            End Set
+        End Property
+        Private m_FileName As String
+
+        Public Function GetExcelData() As DataSet
+            Using wrapper = New ExcelWrapper()
+                Dim app As Excel.Application = wrapper.Excel
+
+                Dim workbook As Excel.Workbook = app.Workbooks.Open(Me.FileName, 0, True)
+
+                Try
+                    Dim excelData As New DataSet()
+
+                    For Each worksheet As Excel.Worksheet In workbook.Worksheets
+                        Dim columns As Integer = worksheet.UsedRange.Columns.Count
+                        Dim rows As Integer = worksheet.UsedRange.Rows.Count
+
+                        If columns > 0 Then
+                            Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
+
+                            Dim RowHeaders As Excel.Range = DirectCast(worksheet.UsedRange.Rows(1), Excel.Range)
+
+                            For j As Integer = 1 To columns
+                                Dim columnName As String = RowHeaders.Columns(j).text.ToString()
+
+                                If String.IsNullOrEmpty(columnName) Then
+                                    Continue For
+                                ElseIf sheetData.Columns.Contains(columnName) Then
+                                    Dim i As Integer = 1
+                                    Dim c As String
+
+                                    Do
+                                        c = columnName & i.ToString()
+                                        i += 1
+                                    Loop While sheetData.Columns.Contains(c)
+
+                                    sheetData.Columns.Add(c, GetType(String))
+                                Else
+                                    sheetData.Columns.Add(columnName, GetType(String))
+                                End If
+                            Next
+
+                            For i As Integer = 2 To rows
+                                Dim sheetRow As DataRow = sheetData.NewRow()
+
+                                For j As Integer = 1 To columns
+                                    Dim columnName As String = RowHeaders.Columns(j).Text.ToString()
+
+                                    Dim oRange As Excel.Range = DirectCast(worksheet.Cells(i, j), Excel.Range)
+
+                                    If Not String.IsNullOrEmpty(columnName) Then
+                                        sheetRow(columnName) = oRange.Text.ToString()
+                                    End If
+                                Next
+
+                                sheetData.Rows.Add(sheetRow)
+                            Next
+                        End If
+                    Next
+
+                    Return excelData
+                    'Catch generatedExceptionName As Exception
+                    '    Throw
+                Finally
+                    workbook.Close()
+                    workbook = Nothing
+                    app.Quit()
+                    app = Nothing
+                    'wrapper.Dispose()
+                End Try
+            End Using
+        End Function
+
+        Function GetExcelData(filetab As String) As DataSet
+            Using wrapper = New ExcelWrapper()
+                Dim app As Excel.Application = wrapper.Excel
+
+                Dim workbook As Excel.Workbook = app.Workbooks.Open(Me.FileName, 0, True)
+
+                Try
+                    Dim excelData As New DataSet()
+                    Dim worksheet As Excel.Worksheet = app.Sheets(filetab)
+                    Dim Columns As Integer = worksheet.UsedRange.Columns.Count
+                    Dim Rows As Integer = worksheet.UsedRange.Rows.Count
+                    Dim range As Excel.Range = Nothing
+                    range = worksheet.UsedRange()
+                    Dim values As Object(,) = range.Value2
+                    Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
+                    'column names
+                    For j As Integer = 1 To values.GetLength(1)
+                        Console.Write("{0}", j)
+
+                    Next
+
+                    'Dim ColumnNames As String() =
+                    For i = 0 To values.GetLength(1)
+                        Dim ColumnName As String = values(1, i)
+                        If String.IsNullOrEmpty(ColumnName) Then
+                            Continue For
+                        Else
+                            sheetData.Columns.Add(ColumnName)
+                        End If
+                    Next
+                    'row data
+                    For i = 3 To values.GetLength(0)
+                        Dim SheetRow As DataRow = sheetData.NewRow()
+                        For j = 1 To values.GetLength(1)
+                            Dim columnName As DataColumn = sheetData.Columns(j)
+                            If Not String.IsNullOrEmpty(values(i, j).ToString()) Then
+                                SheetRow(columnName) = values(i, j).ToString()
+                            Else
+                                Continue For
+                            End If
+                        Next
+                        sheetData.Rows.Add(SheetRow)
+                    Next
+                    Return excelData
+                    'If Columns > 0 Then
+                    '    Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
+                    '    'our headers are contained within row 2
+                    '    Dim Headers As Excel.Range = DirectCast(worksheet.UsedRange.Rows(2), Excel.Range)
+
+                    '    For j As Integer = 1 To Columns
+                    '        Dim columnName As String = Headers.Columns(j).text.ToString()
+
+                    '        If String.IsNullOrEmpty(columnName) Then
+                    '            Continue For
+                    '        ElseIf sheetData.Columns.Contains(columnName) Then
+                    '            Dim i As Integer = 1
+                    '            Dim c As String
+
+                    '            Do
+                    '                c = columnName & i.ToString()
+                    '                i += 1
+                    '            Loop While sheetData.Columns.Contains(c)
+
+                    '            sheetData.Columns.Add(c, GetType(String))
+                    '        Else
+                    '            sheetData.Columns.Add(columnName, GetType(String))
+                    '        End If
+                    '    Next
+
+                    '    For i As Integer = 3 To Rows
+                    '        Dim sheetRow As DataRow = sheetData.NewRow()
+
+                    '        For j As Integer = 1 To Columns
+                    '            Dim columnName As String = Headers.Columns(j).Text.ToString()
+
+                    '            Dim oRange As Excel.Range = DirectCast(worksheet.Cells(i, j), Excel.Range)
+
+                    '            If Not String.IsNullOrEmpty(columnName) Then
+                    '                sheetRow(columnName) = oRange.Text.ToString()
+                    '            End If
+                    '        Next
+
+                    '        sheetData.Rows.Add(sheetRow)
+                    '    Next
+                    'End If
+                    'Return excelData
+                    'Catch generatedExceptionName As Exception
+                    '    Throw
+                Finally
+                    workbook.Close()
+                    workbook = Nothing
+                    app.Quit()
+                    app = Nothing
+                    wrapper.Dispose()
+                End Try
+            End Using
+        End Function
+
+    End Class
 #End Region
 End Namespace
