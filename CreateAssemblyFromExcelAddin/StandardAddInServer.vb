@@ -181,77 +181,77 @@ Namespace CreateAssemblyFromExcelAddin
 
             'not working for the time being.
 
-            'Dim xlds As DataSet = XLFile.GetExcelData(filetab)
-            'Dim ExcelDataTable As DataTable = xlds.Tables(0)
+            Dim xlds As DataSet = XLFile.GetExcelData(filetab)
+            Dim ExcelDataTable As DataTable = xlds.Tables(0)
 
-            'Dim rowNum As Integer = 3
-            'For Each row As DataRow In ExcelDataTable.Rows
-            '    percent = (CDbl(rowNum) / ExcelDataTable.Rows.Count())
-            '    If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
-            '    Console.WriteLine(row("DRAWING NUMBER").ToString())
-            '    Dim SO As SubObjectCls = New SubObjectCls()
-            '    'Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
-            '    If String.IsNullOrEmpty(row("DRAWING NUMBER").ToString()) Then Exit For
-            '    SO.PartNo = IIf(row("DRAWING NUMBER").ToString(), "", row("DRAWING NUMBER").ToString())
-            '    'Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
-            '    SO.LegacyDescr = IIf(String.IsNullOrEmpty(row("DRAWING TITLE").ToString()), "", row("DRAWING TITLE").ToString())
-            '    'Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
-            '    SO.LegacyRev = IIf(String.IsNullOrEmpty(row("DRAWING REV").ToString()), "", row("DRAWING REV").ToString())
-            '    'Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
-            '    SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(row("LEGACY DRAWING NUMBER").ToString()), "", row("LEGACY DRAWING NUMBER").ToString())
-            '    'Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
-            '    SO.ParentAssembly = IIf(String.IsNullOrEmpty(row("PARENT").ToString()), "", row("PARENT").ToString())
-            '    'Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
-            '    SO.FileName = IIf(String.IsNullOrEmpty(row("VAULTED NAME").ToString()), "", row("VAULTED NAME").ToString())
-            '    PartsListFromExcel.Add(SO)
-            '    rowNum += 1
-            'Next
+            Dim rowNum As Integer = 3
+            For Each row As DataRow In ExcelDataTable.Rows
+                percent = (CDbl(rowNum) / ExcelDataTable.Rows.Count())
+                If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
+                Console.WriteLine(row("DRAWING NUMBER").ToString())
+                Dim SO As SubObjectCls = New SubObjectCls()
+                'Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
+                If String.IsNullOrEmpty(row("DRAWING NUMBER").ToString()) Then Exit For
+                SO.PartNo = IIf(row("DRAWING NUMBER").ToString(), "", row("DRAWING NUMBER").ToString())
+                'Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
+                SO.LegacyDescr = IIf(String.IsNullOrEmpty(row("DRAWING TITLE").ToString()), "", row("DRAWING TITLE").ToString())
+                'Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
+                SO.LegacyRev = IIf(String.IsNullOrEmpty(row("DRAWING REV").ToString()), "", row("DRAWING REV").ToString())
+                'Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
+                SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(row("LEGACY DRAWING NUMBER").ToString()), "", row("LEGACY DRAWING NUMBER").ToString())
+                'Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
+                SO.ParentAssembly = IIf(String.IsNullOrEmpty(row("PARENT").ToString()), "", row("PARENT").ToString())
+                'Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
+                SO.FileName = IIf(String.IsNullOrEmpty(row("VAULTED NAME").ToString()), "", row("VAULTED NAME").ToString())
+                PartsListFromExcel.Add(SO)
+                rowNum += 1
+            Next
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
 
             'end FEI
-            Dim oXL As Excel.Application
-            Dim oWB As Excel.Workbook
-            Dim oSheet As Excel.Worksheet
-            'Dim oRng As Excel.Range
+            'Dim oXL As Excel.Application
+            'Dim oWB As Excel.Workbook
+            'Dim oSheet As Excel.Worksheet
+            ''Dim oRng As Excel.Range
 
-            ' Start Excel and get Application object.
-            oXL = CreateObject("Excel.Application")
-            oXL.Visible = False
+            '' Start Excel and get Application object.
+            'oXL = CreateObject("Excel.Application")
+            'oXL.Visible = False
 
-            oWB = oXL.Workbooks.Open("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx")
-            oSheet = oXL.Sheets(filetab)
-            oSheet.Activate()
-            oXL.Calculation = Excel.XlCalculation.xlCalculationManual
-            oXL.ScreenUpdating = False
-            'FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
+            'oWB = oXL.Workbooks.Open("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx")
+            'oSheet = oXL.Sheets(filetab)
+            'oSheet.Activate()
+            'oXL.Calculation = Excel.XlCalculation.xlCalculationManual
+            'oXL.ScreenUpdating = False
+            ''FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
 
-            For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
-                percent = (CDbl(MyRow) / oSheet.UsedRange.Rows.Count())
-                If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
-                Dim SO As SubObjectCls = New SubObjectCls()
-                Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
-                If String.IsNullOrEmpty(PartNo.Value2) Then Exit For
-                SO.PartNo = IIf(String.IsNullOrEmpty(PartNo.Value2), "", PartNo.Value2)
-                Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
-                SO.LegacyDescr = IIf(String.IsNullOrEmpty(Descr.Value2), "", Descr.Value2)
-                Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
-                SO.LegacyRev = IIf(String.IsNullOrEmpty(RevNumber.Value2), "", RevNumber.Value2)
-                Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
-                SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(LegacyDrawingNumber.Value2), "", LegacyDrawingNumber.Value2)
-                Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
-                SO.ParentAssembly = IIf(String.IsNullOrEmpty(ParentAssembly.Value2), "", ParentAssembly.Value2)
-                Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
-                SO.FileName = IIf(String.IsNullOrEmpty(FileName.Value2), "", FileName.Value2)
-                PartsListFromExcel.Add(SO)
-            Next
+            'For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
+            '    percent = (CDbl(MyRow) / oSheet.UsedRange.Rows.Count())
+            '    If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
+            '    Dim SO As SubObjectCls = New SubObjectCls()
+            '    Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
+            '    If String.IsNullOrEmpty(PartNo.Value2) Then Exit For
+            '    SO.PartNo = IIf(String.IsNullOrEmpty(PartNo.Value2), "", PartNo.Value2)
+            '    Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
+            '    SO.LegacyDescr = IIf(String.IsNullOrEmpty(Descr.Value2), "", Descr.Value2)
+            '    Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
+            '    SO.LegacyRev = IIf(String.IsNullOrEmpty(RevNumber.Value2), "", RevNumber.Value2)
+            '    Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
+            '    SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(LegacyDrawingNumber.Value2), "", LegacyDrawingNumber.Value2)
+            '    Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
+            '    SO.ParentAssembly = IIf(String.IsNullOrEmpty(ParentAssembly.Value2), "", ParentAssembly.Value2)
+            '    Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
+            '    SO.FileName = IIf(String.IsNullOrEmpty(FileName.Value2), "", FileName.Value2)
+            '    PartsListFromExcel.Add(SO)
+            'Next
 
-            oXL.Calculation = Excel.XlCalculation.xlCalculationAutomatic
-            oXL.ScreenUpdating = True
-            oWB.Close(False)
-            oSheet = Nothing
-            oWB = Nothing
-            oXL.Quit()
-            oXL = Nothing
+            'oXL.Calculation = Excel.XlCalculation.xlCalculationAutomatic
+            'oXL.ScreenUpdating = True
+            'oWB.Close(False)
+            'oSheet = Nothing
+            'oWB = Nothing
+            'oXL.Quit()
+            'oXL = Nothing
             Dim tr As Transaction
             tr = m_inventorApplication.TransactionManager.StartTransaction(m_inventorApplication.ActiveDocument, "Create Standard Parts From Excel")
             BeginCreateAssemblyStructure()
@@ -1652,50 +1652,6 @@ Namespace CreateAssemblyFromExcelAddin
                         sheetData.Rows.Add(SheetRow)
                     Next
                     Return excelData
-                    'If Columns > 0 Then
-                    '    Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
-                    '    'our headers are contained within row 2
-                    '    Dim Headers As Excel.Range = DirectCast(worksheet.UsedRange.Rows(2), Excel.Range)
-
-                    '    For j As Integer = 1 To Columns
-                    '        Dim columnName As String = Headers.Columns(j).text.ToString()
-
-                    '        If String.IsNullOrEmpty(columnName) Then
-                    '            Continue For
-                    '        ElseIf sheetData.Columns.Contains(columnName) Then
-                    '            Dim i As Integer = 1
-                    '            Dim c As String
-
-                    '            Do
-                    '                c = columnName & i.ToString()
-                    '                i += 1
-                    '            Loop While sheetData.Columns.Contains(c)
-
-                    '            sheetData.Columns.Add(c, GetType(String))
-                    '        Else
-                    '            sheetData.Columns.Add(columnName, GetType(String))
-                    '        End If
-                    '    Next
-
-                    '    For i As Integer = 3 To Rows
-                    '        Dim sheetRow As DataRow = sheetData.NewRow()
-
-                    '        For j As Integer = 1 To Columns
-                    '            Dim columnName As String = Headers.Columns(j).Text.ToString()
-
-                    '            Dim oRange As Excel.Range = DirectCast(worksheet.Cells(i, j), Excel.Range)
-
-                    '            If Not String.IsNullOrEmpty(columnName) Then
-                    '                sheetRow(columnName) = oRange.Text.ToString()
-                    '            End If
-                    '        Next
-
-                    '        sheetData.Rows.Add(sheetRow)
-                    '    Next
-                    'End If
-                    'Return excelData
-                    'Catch generatedExceptionName As Exception
-                    '    Throw
                 Finally
                     workbook.Close()
                     workbook = Nothing
