@@ -179,79 +179,37 @@ Namespace CreateAssemblyFromExcelAddin
             XLFile.FileName = "C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx"
             Dim percent As Double = Nothing
 
-            'not working for the time being.
-
             Dim xlds As DataSet = XLFile.GetExcelData(filetab)
             Dim ExcelDataTable As DataTable = xlds.Tables(0)
 
             Dim rowNum As Integer = 3
             For Each row As DataRow In ExcelDataTable.Rows
-                percent = (CDbl(rowNum) / ExcelDataTable.Rows.Count())
-                If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
-                Console.WriteLine(row("DRAWING NUMBER").ToString())
                 Dim SO As SubObjectCls = New SubObjectCls()
-                'Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
-                If String.IsNullOrEmpty(row("DRAWING NUMBER").ToString()) Then Exit For
-                SO.PartNo = IIf(row("DRAWING NUMBER").ToString(), "", row("DRAWING NUMBER").ToString())
-                'Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
-                SO.LegacyDescr = IIf(String.IsNullOrEmpty(row("DRAWING TITLE").ToString()), "", row("DRAWING TITLE").ToString())
-                'Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
-                SO.LegacyRev = IIf(String.IsNullOrEmpty(row("DRAWING REV").ToString()), "", row("DRAWING REV").ToString())
-                'Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
-                SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(row("LEGACY DRAWING NUMBER").ToString()), "", row("LEGACY DRAWING NUMBER").ToString())
-                'Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
-                SO.ParentAssembly = IIf(String.IsNullOrEmpty(row("PARENT").ToString()), "", row("PARENT").ToString())
-                'Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
-                SO.FileName = IIf(String.IsNullOrEmpty(row("VAULTED NAME").ToString()), "", row("VAULTED NAME").ToString())
+                For i = 0 To ExcelDataTable.Columns.Count - 1
+                    percent = (CDbl(rowNum) / ExcelDataTable.Rows.Count())
+                    If percent Mod 10 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
+                    Dim column As DataColumn = ExcelDataTable.Columns(i)
+                    Select Case column.ColumnName
+                        Case "DRAWING NUMBER"
+                            SO.PartNo = row(column).ToString
+                        Case "DRAWING TITLE"
+                            SO.LegacyDescr = row(column).ToString
+                        Case "DRAWING REV"
+                            SO.LegacyRev = row(column).ToString
+                        Case "LEGACY DRAWING NUMBER"
+                            SO.LegacyDrawingNo = row(column).ToString
+                        Case "PARENT"
+                            SO.ParentAssembly = row(column).ToString
+                        Case "VAULTED NAME"
+                            SO.FileName = row(column).ToString
+                        Case Else
+                    End Select
+                Next
                 PartsListFromExcel.Add(SO)
                 rowNum += 1
             Next
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
 
-            'end FEI
-            'Dim oXL As Excel.Application
-            'Dim oWB As Excel.Workbook
-            'Dim oSheet As Excel.Worksheet
-            ''Dim oRng As Excel.Range
-
-            '' Start Excel and get Application object.
-            'oXL = CreateObject("Excel.Application")
-            'oXL.Visible = False
-
-            'oWB = oXL.Workbooks.Open("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx")
-            'oSheet = oXL.Sheets(filetab)
-            'oSheet.Activate()
-            'oXL.Calculation = Excel.XlCalculation.xlCalculationManual
-            'oXL.ScreenUpdating = False
-            ''FilesArray = GoExcel.CellValues("C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx", filetab, "A3", "A4") ' sets excel to the correct sheet!
-
-            'For MyRow As Integer = 3 To 5000 ' max limit = 50 rows for debugging purposes
-            '    percent = (CDbl(MyRow) / oSheet.UsedRange.Rows.Count())
-            '    If percent Mod 100 = 0 Then UpdateStatusBar(percent, "Grabbing Excel data... Please Wait")
-            '    Dim SO As SubObjectCls = New SubObjectCls()
-            '    Dim PartNo As Excel.Range = oSheet.Cells(MyRow, 2)
-            '    If String.IsNullOrEmpty(PartNo.Value2) Then Exit For
-            '    SO.PartNo = IIf(String.IsNullOrEmpty(PartNo.Value2), "", PartNo.Value2)
-            '    Dim Descr As Excel.Range = oSheet.Cells(MyRow, 11)
-            '    SO.LegacyDescr = IIf(String.IsNullOrEmpty(Descr.Value2), "", Descr.Value2)
-            '    Dim RevNumber As Excel.Range = oSheet.Cells(MyRow, 12)
-            '    SO.LegacyRev = IIf(String.IsNullOrEmpty(RevNumber.Value2), "", RevNumber.Value2)
-            '    Dim LegacyDrawingNumber As Excel.Range = oSheet.Cells(MyRow, 13)
-            '    SO.LegacyDrawingNo = IIf(String.IsNullOrEmpty(LegacyDrawingNumber.Value2), "", LegacyDrawingNumber.Value2)
-            '    Dim ParentAssembly As Excel.Range = oSheet.Cells(MyRow, 9)
-            '    SO.ParentAssembly = IIf(String.IsNullOrEmpty(ParentAssembly.Value2), "", ParentAssembly.Value2)
-            '    Dim FileName As Excel.Range = oSheet.Cells(MyRow, 3)
-            '    SO.FileName = IIf(String.IsNullOrEmpty(FileName.Value2), "", FileName.Value2)
-            '    PartsListFromExcel.Add(SO)
-            'Next
-
-            'oXL.Calculation = Excel.XlCalculation.xlCalculationAutomatic
-            'oXL.ScreenUpdating = True
-            'oWB.Close(False)
-            'oSheet = Nothing
-            'oWB = Nothing
-            'oXL.Quit()
-            'oXL = Nothing
             Dim tr As Transaction
             tr = m_inventorApplication.TransactionManager.StartTransaction(m_inventorApplication.ActiveDocument, "Create Standard Parts From Excel")
             BeginCreateAssemblyStructure()
@@ -543,32 +501,34 @@ Namespace CreateAssemblyFromExcelAddin
                         If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
                             System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
                             'cable assemblies in parent assembly
-                            If Not SubObject.LegacyDescr Is Nothing Then
-                                If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
-                                    Dim occNum As Integer = 1
-                                    For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
-                                        If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
-                                            If System.IO.File.Exists(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt") Then
-                                                SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
-                                            Else
-                                                SubcompOcc.Definition.Document.saveas(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", False)
-                                                SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
-                                            End If
-                                            Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
-                                            'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
-                                            Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
-                                            If Not CableIdIdx = -1 Then
-                                                Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
-                                                cableId.Value = SubObject.LegacyDrawingNo
-                                            End If
-                                            AssignIProperties(SubcompOcc, SubObject)
-                                            occNum += 1
-                                        End If
-                                    Next
-                                End If
-                            Else
-                                AssignIProperties(realOcc, SubObject)
-                            End If
+                            ReplaceCableParts(realOcc, SubObject)
+                            'If Not SubObject.LegacyDescr Is Nothing Then
+                            '    If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
+                            '        Dim occNum As Integer = 1
+                            '        For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
+                            '            If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
+                            '                Dim fileNameToSwapWith As String = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullFileName) & "\" & System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt"
+                            '                If System.IO.File.Exists(fileNameToSwapWith) Then
+                            '                    SubcompOcc.Replace(fileNameToSwapWith, True)
+                            '                Else
+                            '                    SubcompOcc.Definition.Document.saveas(fileNameToSwapWith, False)
+                            '                    SubcompOcc.Replace(fileNameToSwapWith, True)
+                            '                End If
+                            '                Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
+                            '                'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
+                            '                Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
+                            '                If Not CableIdIdx = -1 Then
+                            '                    Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
+                            '                    cableId.Value = SubObject.LegacyDrawingNo
+                            '                End If
+                            '                AssignIProperties(SubcompOcc, SubObject)
+                            '                occNum += 1
+                            '            End If
+                            '        Next
+                            '    End If
+                            'Else
+                            '    AssignIProperties(realOcc, SubObject)
+                            'End If
                         End If
                     Catch ex As Exception
                         MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
@@ -593,36 +553,39 @@ Namespace CreateAssemblyFromExcelAddin
                         Next
 
                         If realOcc Is Nothing Then 'only insert the occurrence once or we end up with a huge assembly containing multiple occurrences...
+                            'don't add anything to files outside of this project folder as we have to assume they are not checked out/are released.
+                            If Not asmDoc.ComponentDefinition.Document.FullFileName.Contains(ProjectCode) Then Exit Sub
                             realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                             realOccStr = realOcc.Name
                             If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
                                 System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
-                                If Not SubObject.LegacyDescr Is Nothing Then
-                                    If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
-                                        Dim occNum As Integer = 1
-                                        For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
-                                            If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
-                                                If System.IO.File.Exists(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt") Then
-                                                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
-                                                Else
-                                                    SubcompOcc.Definition.Document.saveas(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", False)
-                                                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
-                                                End If
-                                                Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
-                                                'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
-                                                Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
-                                                If Not CableIdIdx = -1 Then
-                                                    Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
-                                                    cableId.Value = SubObject.LegacyDrawingNo
-                                                End If
-                                                AssignIProperties(SubcompOcc, SubObject)
-                                                occNum += 1
-                                            End If
-                                        Next
-                                    End If
-                                Else
-                                    AssignIProperties(realOcc, SubObject)
-                                End If
+                                ReplaceCableParts(realOcc, SubObject)
+                                'If Not SubObject.LegacyDescr Is Nothing Then
+                                '    If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
+                                '        Dim occNum As Integer = 1
+                                '        For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
+                                '            If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
+                                '                If System.IO.File.Exists(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt") Then
+                                '                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                '                Else
+                                '                    SubcompOcc.Definition.Document.saveas(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", False)
+                                '                    SubcompOcc.Replace(System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt", True)
+                                '                End If
+                                '                Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
+                                '                'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
+                                '                Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
+                                '                If Not CableIdIdx = -1 Then
+                                '                    Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
+                                '                    cableId.Value = SubObject.LegacyDrawingNo
+                                '                End If
+                                '                AssignIProperties(SubcompOcc, SubObject)
+                                '                occNum += 1
+                                '            End If
+                                '        Next
+                                '    End If
+                                'Else
+                                '    AssignIProperties(realOcc, SubObject)
+                                'End If
                             End If
                         End If
                     Catch ex As Exception
@@ -724,11 +687,56 @@ Namespace CreateAssemblyFromExcelAddin
             End Try
             Return foundfilename
         End Function
-
-        Private Sub UpdateStatusBar(percent As Double, Optional Message As String = "")
+        ''' <summary>
+        ''' Replaces Cable parts with their required copy/renamed part files and adjusts the relevant parameters accordingly.
+        ''' </summary>
+        ''' <param name="realOcc">the occurrence we are editing</param>
+        ''' <param name="SubObject">the subobject to edit</param>
+        ''' <remarks></remarks>
+        Private Sub ReplaceCableParts(ByVal realOcc As ComponentOccurrence, ByVal SubObject As SubObjectCls)
+            If Not SubObject.LegacyDescr Is Nothing Then
+                If SubObject.LegacyDescr.ToLower.Contains("cable") And SubObject.FileName.ToLower.EndsWith(".iam") Then
+                    Dim occNum As Integer = 1
+                    For Each SubcompOcc As ComponentOccurrence In realOcc.SubOccurrences
+                        If SubcompOcc.Name.EndsWith(":" & occNum.ToString()) Then
+                            Dim fileNameToSwapWith As String = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullFileName) & "\" & System.IO.Path.GetFileNameWithoutExtension(SubObject.FileName) & ".ipt"
+                            If System.IO.File.Exists(fileNameToSwapWith) Then
+                                SubcompOcc.Replace(fileNameToSwapWith, True)
+                            Else
+                                SubcompOcc.Definition.Document.saveas(fileNameToSwapWith, False)
+                                SubcompOcc.Replace(fileNameToSwapWith, True)
+                            End If
+                            Dim oCableCompDef As PartComponentDefinition = SubcompOcc.Definition
+                            'Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.Select(Function(x As Parameter) x).Where(Function(y As Parameter) y.Name = "CABLE_ID").FirstOrDefault()
+                            Dim CableIdIdx As Integer = oCableCompDef.Parameters.UserParameters.FindIndex(Function(param As Parameter) param.Name = "CABLE_ID")
+                            If Not CableIdIdx = -1 Then
+                                Dim cableId As Parameter = oCableCompDef.Parameters.UserParameters.Item(CableIdIdx)
+                                cableId.Value = SubObject.LegacyDrawingNo
+                            End If
+                            AssignIProperties(SubcompOcc, SubObject)
+                            occNum += 1
+                        End If
+                    Next
+                End If
+            Else
+                AssignIProperties(realOcc, SubObject)
+            End If
+        End Sub
+        ''' <summary>
+        ''' Updates the statusbar with a percentage value
+        ''' </summary>
+        ''' <param name="percent"></param>
+        ''' <param name="Message"></param>
+        ''' <remarks></remarks>
+        Private Sub UpdateStatusBar(ByVal percent As Double, ByVal Message As String)
             m_inventorApplication.StatusBarText = Message + " (" + percent.ToString("P1") + ")"
         End Sub
-        Private Sub UpdateStatusBar(Optional Message As String = "")
+        ''' <summary>
+        ''' updates the statusbar with a string value.
+        ''' </summary>
+        ''' <param name="Message"></param>
+        ''' <remarks></remarks>
+        Private Sub UpdateStatusBar(ByVal Message As String)
             m_inventorApplication.StatusBarText = Message
         End Sub
 #End Region
@@ -907,17 +915,6 @@ Namespace CreateAssemblyFromExcelAddin
             Return CInt(f)
         End Function
 #End Region
-
-
-
-
-
-
-
-
-
-
-
     End Class
 #Region "Sub Object Class"
     ''' <summary>
