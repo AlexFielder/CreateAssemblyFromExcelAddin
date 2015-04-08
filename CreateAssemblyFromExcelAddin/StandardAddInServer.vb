@@ -1617,13 +1617,13 @@ Namespace CreateAssemblyFromExcelAddin
                     Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
                     'column names
                     For j As Integer = 1 To values.GetLength(1)
-                        Console.Write("{0}", j)
-
+                        Console.Write(values(2, j))
+                        Console.WriteLine()
                     Next
 
                     'Dim ColumnNames As String() =
-                    For i = 0 To values.GetLength(1)
-                        Dim ColumnName As String = values(1, i)
+                    For i = 1 To values.GetLength(1)
+                        Dim ColumnName As String = values(2, i)
                         If String.IsNullOrEmpty(ColumnName) Then
                             Continue For
                         Else
@@ -1631,14 +1631,22 @@ Namespace CreateAssemblyFromExcelAddin
                         End If
                     Next
                     'row data
-                    For i = 3 To values.GetLength(0)
+                    For i = 2 To values.GetLength(0)
                         Dim SheetRow As DataRow = sheetData.NewRow()
-                        For j = 1 To values.GetLength(1)
-                            Dim columnName As DataColumn = sheetData.Columns(j)
-                            If Not String.IsNullOrEmpty(values(i, j).ToString()) Then
-                                SheetRow(columnName) = values(i, j).ToString()
-                            Else
+                        Dim ColumnNum As Integer = 0
+                        For j = 1 To sheetData.Columns.Count
+                            Dim column As DataColumn = sheetData.Columns(ColumnNum)
+                            If column Is Nothing Then
                                 Continue For
+                            Else
+                                If Not values(i, j) Is Nothing Then
+                                    If Not String.IsNullOrEmpty(values(i, j).ToString()) Then
+                                        SheetRow(column) = values(i, j).ToString()
+                                        'Else
+                                        '    Continue For
+                                    End If
+                                End If
+                                ColumnNum += 1
                             End If
                         Next
                         sheetData.Rows.Add(SheetRow)
