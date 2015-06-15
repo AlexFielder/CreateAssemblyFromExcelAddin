@@ -32,7 +32,8 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <OutputPath>..\..\..\..\..\..\..\Program Files\Autodesk\Inventor 2014\Bin\CreateAssemblyFromExcelAddin\</OutputPath>
-    <DocumentationFile>.xml</DocumentationFile>
+    <DocumentationFile>
+    </DocumentationFile>
     <DebugSymbols>true</DebugSymbols>
     <DefineDebug>true</DefineDebug>
     <DefineTrace>true</DefineTrace>
@@ -43,7 +44,8 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <OutputPath>bin\Release\</OutputPath>
-    <DocumentationFile>.xml</DocumentationFile>
+    <DocumentationFile>
+    </DocumentationFile>
     <DebugSymbols>false</DebugSymbols>
     <DefineDebug>false</DefineDebug>
     <DefineTrace>true</DefineTrace>
@@ -71,24 +73,31 @@
   <ItemGroup>
     <Reference Include="Autodesk.Connectivity.Explorer.ExtensibilityTools">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.Connectivity.Explorer.ExtensibilityTools.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.Extensibility.Framework">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.Connectivity.Extensibility.Framework.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.WebServices">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.Connectivity.WebServices.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Forms">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault.Forms">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2014 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Autodesk.Inventor.interop, Version=18.0.0.0, Culture=neutral, PublicKeyToken=d84147f8b4276564, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -126,6 +135,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="CreateAssemblyFromExcelAddin.X.manifest" />
+    <None Include="SetupCAFE\SetupCAFE.isl" />
+    <None Include="SetupCAFE\SetupCAFE.isproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin" />
@@ -196,6 +207,10 @@
       <Isolated>False</Isolated>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </COMReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="SetupCAFE\setup.exe" />
+    <Content Include="SetupCAFE\SetupCAFE.iss" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.VisualBasic.targets" />
   <PropertyGroup>
