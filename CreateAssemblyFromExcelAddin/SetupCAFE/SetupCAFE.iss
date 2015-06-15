@@ -23,7 +23,7 @@ DisableDirPage=yes
 DefaultGroupName=Create Application From Excel Addin
 DisableProgramGroupPage=yes
 OutputDir=C:\Users\alex\Documents\Visual Studio 2012\Projects\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin\SetupCAFE
-OutputBaseFilename=setup
+OutputBaseFilename=setupCAFE
 SetupIconFile=C:\Users\alex\Documents\Visual Studio 2012\Projects\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin\Icons8-Windows-8-Food-Cafe.ico
 Compression=lzma
 SolidCompression=yes
@@ -32,8 +32,8 @@ SolidCompression=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "C:\Users\alex\Documents\Visual Studio 2012\Projects\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin\bin\Debug\CreateAssemblyFromExcelAddin.pdb"; DestDir: "{app}"; Flags: ignoreversion
-Source: "C:\Users\alex\Documents\Visual Studio 2012\Projects\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin\bin\Debug\CreateAssemblyFromExcelAddin.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Program Files\Autodesk\Inventor 2014\Bin\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin.pdb"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Program Files\Autodesk\Inventor 2014\Bin\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\alex\Documents\Visual Studio 2012\Projects\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin\Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin"; DestDir: "C:\ProgramData\Autodesk\Inventor 2014\Addins\"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

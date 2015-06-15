@@ -209,7 +209,6 @@
     </COMReference>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="SetupCAFE\setup.exe" />
     <Content Include="SetupCAFE\SetupCAFE.iss" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.VisualBasic.targets" />
