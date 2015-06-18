@@ -168,11 +168,20 @@ Namespace CreateAssemblyFromExcelAddin
             Return PictureDispConverter.ToIPictureDisp(ico)
         End Function
 
+        ''' <summary>
+        ''' This is the main Method of our tool. It prompts the user to input a project code.
+        ''' </summary>
+        ''' <param name="Document">the parent assembly document we should be running from</param>
+        ''' <remarks></remarks>
         Private Sub RunCAFE(Document As _Document)
             'Dim FilesArray As New ArrayList
             'pass the local variables to our external .dll
             'XTVB.InventorApplication = ThisApplication
             ProjectCode = InputBox("Which project?", "4 Letter Project Code", "CODE")
+            If ProjectCode = "" Then
+                MessageBox.Show("No project Code inserted, Exiting...")
+                Exit Sub
+            End If
             Dim filetab As String = ProjectCode + "-MODELLING-BASELINE"
             'start faster excel implementation (FEI)
             Dim XLFile As New FileToProcess()
@@ -180,6 +189,10 @@ Namespace CreateAssemblyFromExcelAddin
             Dim percent As Double = Nothing
 
             Dim xlds As DataSet = XLFile.GetExcelData(filetab)
+            If xlds Is Nothing Then
+                MessageBox.Show("No matching tab could be found for the project code you used." & vbCrLf & "Suggest you try again!")
+                Exit Sub
+            End If
             Dim ExcelDataTable As DataTable = xlds.Tables(0)
 
             Dim rowNum As Integer = 3
@@ -191,11 +204,24 @@ Namespace CreateAssemblyFromExcelAddin
                         Case "DRAWING NUMBER"
                             SO.PartNo = row(column).ToString
                         Case "DRAWING TITLE"
-                            SO.LegacyDescr = row(column).ToString
+                            If row(column).ToString = "N/A" Then
+                                SO.LegacyDescr = "REFER TO PDF"
+                            Else
+                                SO.LegacyDescr = row(column).ToString
+                            End If
+
                         Case "DRAWING REV"
-                            SO.LegacyRev = row(column).ToString
+                            If row(column).ToString = "N/A" Then
+                                SO.LegacyRev = "REFER TO PDF"
+                            Else
+                                SO.LegacyRev = row(column).ToString
+                            End If
                         Case "LEGACY DRAWING NUMBER"
-                            SO.LegacyDrawingNo = row(column).ToString
+                            If row(column).ToString = "N/A" Then
+                                SO.LegacyDrawingNo = "REFER TO PDF"
+                            Else
+                                SO.LegacyDrawingNo = row(column).ToString
+                            End If
                         Case "PARENT"
                             SO.ParentAssembly = row(column).ToString
                         Case "VAULTED NAME"
@@ -293,6 +319,12 @@ Namespace CreateAssemblyFromExcelAddin
                 End If
             Next
             MessageBox.Show(CompleteListFromSystemDrive.Count)
+            PlayBackgroundSoundResource()
+        End Sub
+
+        Sub PlayBackgroundSoundResource()
+            My.Computer.Audio.Play(My.Resources.fin, _
+                AudioPlayMode.WaitToComplete)
         End Sub
 
         ''' <summary>
@@ -740,7 +772,7 @@ Namespace CreateAssemblyFromExcelAddin
                     )
                 End If
                 For Each file As FileInfo In Dir.GetFiles()
-                    If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name And Not file.Name.ToLower.Contains("missing") Then
+                    If Not file.Name.Contains("IL") And Not file.Name.Contains("DL") And Not file.Name.Contains("SP") And Not file.Name = thisAssy.Name And Not file.Name.ToLower.Contains("missing") And file.Name.EndsWith(".pdf") Then
                         'if the directory name is the same as the assembly name then the parentassembly is the folder above!
                         Dim friendlyfilename As String = GetFriendlyName(file.Name)
                         If friendlydirname = friendlyfilename Then 'parent assembly in this folder
