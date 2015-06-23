@@ -204,20 +204,20 @@ Namespace CreateAssemblyFromExcelAddin
                         Case "DRAWING NUMBER"
                             SO.PartNo = row(column).ToString
                         Case "DRAWING TITLE"
-                            If row(column).ToString = "N/A" Then
+                            If row(column).ToString.Contains("N/A") Then
                                 SO.LegacyDescr = "REFER TO PDF"
                             Else
                                 SO.LegacyDescr = row(column).ToString
                             End If
 
                         Case "DRAWING REV"
-                            If row(column).ToString = "N/A" Then
+                            If row(column).ToString.Contains("N/A") Then
                                 SO.LegacyRev = "REFER TO PDF"
                             Else
                                 SO.LegacyRev = row(column).ToString
                             End If
                         Case "LEGACY DRAWING NUMBER"
-                            If row(column).ToString = "N/A" Then
+                            If row(column).ToString.Contains("N/A") Then
                                 SO.LegacyDrawingNo = "REFER TO PDF"
                             Else
                                 SO.LegacyDrawingNo = row(column).ToString
@@ -1631,6 +1631,22 @@ Namespace CreateAssemblyFromExcelAddin
                         sheetData.Rows.Add(SheetRow)
                     Next
                     Return excelData
+                Catch ex As Exception
+                    
+                    MessageBox.Show("There was a problem with the sheet name perhaps?" & vbCrLf & ex.Message & vbCrLf & ex.StackTrace)
+                    Dim sheetnames As List(Of String) = New List(Of String)
+                    For Each ws As Excel.Worksheet In app.Sheets
+                        If ws.Name.Contains("MODELLING-BASELINE") Then
+                            sheetnames.Add(ws.Name)
+                        End If
+                    Next
+                    MessageBox.Show("List of available sheet names is: " & String.Join("," & vbCrLf, sheetnames))
+                    workbook.Close()
+                    workbook = Nothing
+                    app.Quit()
+                    app = Nothing
+                    wrapper.Dispose()
+                    Return Nothing
                 Finally
                     workbook.Close()
                     workbook = Nothing
