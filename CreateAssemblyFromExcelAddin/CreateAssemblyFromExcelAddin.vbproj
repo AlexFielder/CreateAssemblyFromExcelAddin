@@ -226,8 +226,9 @@
     </PreBuildEvent>
     <PostBuildEvent>call "%25VS110COMNTOOLS%25vsvars32"
 			mt.exe -manifest "$(ProjectDir)CreateAssemblyFromExcelAddin.X.manifest" -outputresource:"$(TargetPath)";#2
-copy "$(ProjectDir)Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin" "C:\ProgramData\Autodesk\Inventor 2014\Addins\"
-copy "$(ProjectDir)$(OutDir)CreateAssemblyFromExcelAddin.dll" "C:\Program Files\Autodesk\Inventor 2014\Bin\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin.dll"
-copy "$(ProjectDir)$(OutDir)CreateAssemblyFromExcelAddin.pdb" "C:\Program Files\Autodesk\Inventor 2014\Bin\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin.pdb"</PostBuildEvent>
+XCopy "$(ProjectDir)Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
+XCopy "$(TargetPath)" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
+XCopy "$(TargetDir)$(TargetName).pdb" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
+</PostBuildEvent>
   </PropertyGroup>
 </Project>
