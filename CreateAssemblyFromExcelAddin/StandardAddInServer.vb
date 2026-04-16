@@ -19,8 +19,8 @@ Imports Vault = Autodesk.DataManagement.Client.Framework.Vault
 Imports VDF = Autodesk.DataManagement.Client.Framework
 
 Namespace CreateAssemblyFromExcelAddin
-    <ProgIdAttribute("CreateAssemblyFromExcelAddin.StandardAddInServer"), _
-    GuidAttribute("38d3b483-2797-4307-92ae-8456410d6801")> _
+    <ProgIdAttribute("CreateAssemblyFromExcelAddin.StandardAddInServer"),
+    GuidAttribute("38d3b483-2797-4307-92ae-8456410d6801")>
     Public Class StandardAddInServer
         Implements Inventor.ApplicationAddInServer
 
@@ -46,6 +46,9 @@ Namespace CreateAssemblyFromExcelAddin
         Private associationsByFile As New Dictionary(Of Long, List(Of Vault.Currency.Entities.FileIteration))()
         Public Shared selectedfile As ListBoxFileItem = Nothing
         Public Shared FoundList As List(Of ListBoxFileItem) = Nothing
+        ' Settings loaded from appsettings.json beside the addin DLL; refreshed after login
+        ' so that references stored in created assemblies match the user's actual Vault Working Folder.
+        Private m_settings As CafeSettings = CafeSettings.Load()
 #Region "ApplicationAddInServer Members"
 
 
@@ -61,8 +64,8 @@ Namespace CreateAssemblyFromExcelAddin
 
             ' TODO:  Add ApplicationAddInServer.Activate implementation.
             ' e.g. event initialization, command creation etc.
-            Dim conDefs As Inventor.ControlDefinitions = _
-                m_inventorApplication. _
+            Dim conDefs As Inventor.ControlDefinitions =
+                m_inventorApplication.
                 CommandManager.ControlDefinitions
 
             ' our custom command ID
@@ -73,13 +76,13 @@ Namespace CreateAssemblyFromExcelAddin
                 btnDef = conDefs.Item(idCommand1)
             Catch ex As Exception
                 ' or create it
-                btnDef = conDefs.AddButtonDefinition( _
-                    "Create Assembly From Excel", idCommand1, _
-                    CommandTypesEnum.kEditMaskCmdType, _
-                    Guid.NewGuid().ToString(), _
-                    "Creates the Assembly structure using Excel for data input and Vaulted files where possible!", _
-                    "Use this at the start of the project to build the parent assembly structure", _
-                    GetICOResource("CreateAssemblyFromExcelAddin.Icons8-Windows-8-Food-Cafe.ico"), _
+                btnDef = conDefs.AddButtonDefinition(
+                    "Create Assembly From Excel", idCommand1,
+                    CommandTypesEnum.kEditMaskCmdType,
+                    Guid.NewGuid().ToString(),
+                    "Creates the Assembly structure using Excel for data input and Vaulted files where possible!",
+                    "Use this at the start of the project to build the parent assembly structure",
+                    GetICOResource("CreateAssemblyFromExcelAddin.Icons8-Windows-8-Food-Cafe.ico"),
                     GetICOResource("CreateAssemblyFromExcelAddin.Icons8-Windows-8-Food-Cafe.ico"))
             End Try
 
@@ -146,9 +149,25 @@ Namespace CreateAssemblyFromExcelAddin
                 MessageBox.Show("Needs to be run from the highest-level Assembly file!")
             Else
                 m_conn = Vault.Forms.Library.Login(Nothing)
+                If m_conn Is Nothing Then
+                    MessageBox.Show("Vault login was cancelled or failed. Exiting.")
+                    Exit Sub
+                End If
+                ' Persist the logged-in user's Vault Working Folder to appsettings.json, then
+                ' reload so that all subsequent file/reference paths come from the captured value.
+                CafeSettings.CaptureFromVault(m_conn)
+                m_settings = CafeSettings.Load()
                 RunCAFE(m_inventorApplication.ActiveDocument)
             End If
         End Sub
+
+        ''' <summary>
+        ''' Builds a path under the "Designs" subfolder of the configured Vault Working Folder.
+        ''' Used to resolve base/template parts that the add-in copies when creating new components.
+        ''' </summary>
+        Private Function TemplatePath(templateFileName As String) As String
+            Return System.IO.Path.Combine(m_settings.VaultWorkingFolder, "Designs", templateFileName)
+        End Function
 
         ''' <summary>
         ''' Returns the relevant resource from the compiled .dll file
@@ -157,13 +176,13 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="icoResourceName"></param>
         ''' <returns></returns>
         ''' <remarks></remarks>
-        Private Function GetICOResource( _
+        Private Function GetICOResource(
                   ByVal icoResourceName As String) As Object
-            Dim assemblyNet As System.Reflection.Assembly = _
+            Dim assemblyNet As System.Reflection.Assembly =
               System.Reflection.Assembly.GetExecutingAssembly()
-            Dim stream As System.IO.Stream = _
+            Dim stream As System.IO.Stream =
               assemblyNet.GetManifestResourceStream(icoResourceName)
-            Dim ico As System.Drawing.Icon = _
+            Dim ico As System.Drawing.Icon =
               New System.Drawing.Icon(stream)
             Return PictureDispConverter.ToIPictureDisp(ico)
         End Function
@@ -185,7 +204,7 @@ Namespace CreateAssemblyFromExcelAddin
             Dim filetab As String = ProjectCode + "-MODELLING-BASELINE"
             'start faster excel implementation (FEI)
             Dim XLFile As New FileToProcess()
-            XLFile.FileName = "C:\LEGACY VAULT WORKING FOLDER\Designs\Project Tracker.xlsx"
+            XLFile.FileName = m_settings.ProjectTrackerPath
             Dim percent As Double = Nothing
 
             Dim xlds As DataSet = XLFile.GetExcelData(filetab)
@@ -281,8 +300,8 @@ Namespace CreateAssemblyFromExcelAddin
                 If Group.Key > 1 Then
                     For Each item As SubObjectCls In Group
                         Dim File As ACW.File = (From f In VaultedFileList
-                                               Where f.Name = item.FileName
-                                               Select f).FirstOrDefault()
+                                                Where f.Name = item.FileName
+                                                Select f).FirstOrDefault()
                         If Not File Is Nothing Then
                             Dim ids As Long() = FileAssocLiteArrays.Select(
                                 Function(EachFileAssocLite) EachFileAssocLite).Where(
@@ -292,8 +311,8 @@ Namespace CreateAssemblyFromExcelAddin
                                 Dim Linkedfiles = VaultedFileList.Where(Function(x) ids.Contains(x.Id))
                                 For Each RemoveableItem In Linkedfiles
                                     Dim FileToRemove = (From f In EditedListFromSystemDrive
-                                                       Where f.FileName = RemoveableItem.Name
-                                                       Select f).FirstOrDefault()
+                                                        Where f.FileName = RemoveableItem.Name
+                                                        Select f).FirstOrDefault()
                                     EditedListFromSystemDrive.Remove(FileToRemove)
                                 Next
                             End If
@@ -323,7 +342,7 @@ Namespace CreateAssemblyFromExcelAddin
         End Sub
 
         Sub PlayBackgroundSoundResource()
-            My.Computer.Audio.Play(My.Resources.fin, _
+            My.Computer.Audio.Play(My.Resources.fin,
                 AudioPlayMode.WaitToComplete)
         End Sub
 
@@ -399,7 +418,7 @@ Namespace CreateAssemblyFromExcelAddin
             VaultedFileList = New List(Of ACW.File)()
 
             While status Is Nothing OrElse VaultedFileList.Count < status.TotalHits
-                Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark, _
+                Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark,
                     status)
                 If files IsNot Nothing Then
                     VaultedFileList.AddRange(files)
@@ -436,35 +455,35 @@ Namespace CreateAssemblyFromExcelAddin
                     If Not SubObject.LegacyDescr Is Nothing Then
                         If SubObject.LegacyDescr.ToLower.Contains("cable") Then
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.iam"
-                            basecablepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000 CABLE.ipt"
+                            basepartname = TemplatePath("DT-99999-000 CABLE.iam")
+                            basecablepartname = TemplatePath("DT-99999-000 CABLE.ipt")
                             NewCablePartName = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
                         Else
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                            basepartname = TemplatePath("DT-99999-000.iam")
                         End If
                     Else
                         newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                        basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                        basepartname = TemplatePath("DT-99999-000.iam")
                     End If
                 ElseIf SubObject.PartNo.StartsWith("DT-", StringComparison.Ordinal) Then
                     If Not SubObject.LegacyDescr Is Nothing Then
                         If SubObject.LegacyDescr.Contains("ASSEMBLY") Or SubObject.LegacyDescr.Contains("ASSY") Then
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                            basepartname = TemplatePath("DT-99999-000.iam")
                         Else
                             newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
-                            basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.ipt"
+                            basepartname = TemplatePath("DT-99999-000.ipt")
                         End If
                     Else
                         newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
-                        basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.ipt"
+                        basepartname = TemplatePath("DT-99999-000.ipt")
                     End If
                 ElseIf SubObject.PartNo.StartsWith("DL-", StringComparison.Ordinal) Then
                     'technically this assembly is missing from the structure!
                     newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) &
                         "\" & GetFriendlyDirName(SubObject.PartNo) & ".iam"
-                    basepartname = "C:\LEGACY VAULT WORKING FOLDER\Designs\DT-99999-000.iam"
+                    basepartname = TemplatePath("DT-99999-000.iam")
                 End If
 
                 'check if the file exists locally and copy a template to create it if not.
@@ -519,7 +538,7 @@ Namespace CreateAssemblyFromExcelAddin
                     newfilename = CreateAssemblyComponents(SubObject)
                 Else
                     Dim foldername As String = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = VaultedFileList.Item(i).FolderId).Select(Function(k) k.Value).First().FullName
-                    foldername = foldername.Replace("/", "\").Replace("$", "C:\Legacy Vault Working Folder\")
+                    foldername = foldername.Replace("/", "\").Replace("$", m_settings.VaultWorkingFolder & "\")
                     newfilename = foldername & "\" & VaultedFileList.Item(i).Name
                     'Dim FileId As Long = VaultedFileList.Item(i).Id
                     'VaultedFileList.RemoveAll(Function(x) )
@@ -533,7 +552,7 @@ Namespace CreateAssemblyFromExcelAddin
                         If Not asmDoc.ComponentDefinition.Document.FullFileName.Tolower.Contains(ProjectCode.ToLower()) Then Exit Sub
                         realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                         realOccStr = realOcc.Name
-                        If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
+                        If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And
                             System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
                             'cable assemblies in parent assembly
                             ReplaceCableParts(realOcc, SubObject)
@@ -566,7 +585,7 @@ Namespace CreateAssemblyFromExcelAddin
                                 If Not asmDoc.ComponentDefinition.Document.FullFileName.tolower.Contains(ProjectCode.ToLower()) Then Exit Sub
                                 realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                                 realOccStr = realOcc.Name
-                                If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And _
+                                If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And
                                     System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
                                     ReplaceCableParts(realOcc, SubObject)
                                 End If
@@ -634,7 +653,7 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <returns>Returns the filename we were searching for if it already exists</returns>
         ''' <remarks></remarks>
         Private Function FindFileInVWF(NewFileName As String) As String
-            Dim dir = New DirectoryInfo("C:\Legacy Vault Working Folder\Designs")
+            Dim dir = New DirectoryInfo(System.IO.Path.Combine(m_settings.VaultWorkingFolder, "Designs"))
             Dim tmpstr = GetExistingFile(dir, System.IO.Path.GetFileNameWithoutExtension(NewFileName))
             If tmpstr = "" And foundfile Is Nothing Then
                 Return ""
@@ -656,12 +675,12 @@ Namespace CreateAssemblyFromExcelAddin
                 'this way should create a large list of .ipt/iam files in one pass that we can keep for later reuse. It will likely be slow initially but faster later.
                 If files Is Nothing Then
                     files = Dir.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(Function(s As FileInfo) _
-                                                                                             s.Name.EndsWith(".ipt", StringComparison.OrdinalIgnoreCase) OrElse _
+                                                                                             s.Name.EndsWith(".ipt", StringComparison.OrdinalIgnoreCase) OrElse
                                                                                              s.Name.EndsWith(".iam", StringComparison.OrdinalIgnoreCase))
                 End If
                 Dim file As FileInfo = (From f As FileInfo In files
-                                       Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = NewFileName
-                                       Select f).FirstOrDefault()
+                                        Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = NewFileName
+                                        Select f).FirstOrDefault()
                 If Not file Is Nothing Then
                     foundfile = file
                     foundfilename = file.Name
@@ -1006,9 +1025,9 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <returns></returns>
         ''' <remarks></remarks>
         Public Shared Function Split(Source As List(Of SubObjectCls)) As List(Of List(Of SubObjectCls))
-            Return Source.[Select](Function(x, i) New With { _
-                Key .Index = i, _
-                Key .Value = x _
+            Return Source.[Select](Function(x, i) New With {
+                Key .Index = i,
+                Key .Value = x
             }).GroupBy(Function(x) x.Index).[Select](Function(x) x.[Select](Function(v) v.Value).ToList()).ToList()
         End Function
 
@@ -1079,7 +1098,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_FeatureCount
             End Get
             Set(value As Integer)
-                m_FeatureCount = Value
+                m_FeatureCount = value
             End Set
         End Property
         Private m_FeatureCount As Integer
@@ -1089,7 +1108,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_OccurrenceCount
             End Get
             Set(value As Integer)
-                m_OccurrenceCount = Value
+                m_OccurrenceCount = value
             End Set
         End Property
         Private m_OccurrenceCount As Integer
@@ -1099,7 +1118,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_ParameterCount
             End Get
             Set(value As Integer)
-                m_ParameterCount = Value
+                m_ParameterCount = value
             End Set
         End Property
         Private m_ParameterCount As Integer
@@ -1109,7 +1128,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_ConstraintCount
             End Get
             Set(value As Integer)
-                m_ConstraintCount = Value
+                m_ConstraintCount = value
             End Set
         End Property
         Private m_ConstraintCount As Integer
@@ -1119,7 +1138,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_Material
             End Get
             Set(value As String)
-                m_Material = Value
+                m_Material = value
             End Set
         End Property
         Private m_Material As String
@@ -1129,7 +1148,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_Title
             End Get
             Set(value As String)
-                m_Title = Value
+                m_Title = value
             End Set
         End Property
         Private m_Title As String
@@ -1139,7 +1158,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_RevNumber
             End Get
             Set(value As String)
-                m_RevNumber = Value
+                m_RevNumber = value
             End Set
         End Property
         Private m_RevNumber As String
@@ -1149,7 +1168,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_LegacyDrawingNumber
             End Get
             Set(value As String)
-                m_LegacyDrawingNumber = Value
+                m_LegacyDrawingNumber = value
             End Set
         End Property
         Private m_LegacyDrawingNumber As String
@@ -1170,15 +1189,15 @@ Namespace CreateAssemblyFromExcelAddin
     Public NotInheritable Class PictureDispConverter
         <DllImport("OleAut32.dll",
           EntryPoint:="OleCreatePictureIndirect",
-          ExactSpelling:=True, PreserveSig:=False)> _
-        Private Shared Function OleCreatePictureIndirect( _
-    <MarshalAs(UnmanagedType.AsAny)> picdesc As Object, _
-    ByRef iid As Guid, _
-    <MarshalAs(UnmanagedType.Bool)> fOwn As Boolean _
+          ExactSpelling:=True, PreserveSig:=False)>
+        Private Shared Function OleCreatePictureIndirect(
+    <MarshalAs(UnmanagedType.AsAny)> picdesc As Object,
+    ByRef iid As Guid,
+    <MarshalAs(UnmanagedType.Bool)> fOwn As Boolean
     ) As IPictureDisp
         End Function
 
-        Shared iPictureDispGuid As Guid = GetType( _
+        Shared iPictureDispGuid As Guid = GetType(
           IPictureDisp).GUID
 
         Private NotInheritable Class PICTDESC
@@ -1192,9 +1211,9 @@ Namespace CreateAssemblyFromExcelAddin
             Public Const PICTYPE_ICON As Short = 3
             Public Const PICTYPE_ENHMETAFILE As Short = 4
 
-            <StructLayout(LayoutKind.Sequential)> _
+            <StructLayout(LayoutKind.Sequential)>
             Public Class Icon
-                Friend cbSizeOfStruct As Integer = Marshal.SizeOf( _
+                Friend cbSizeOfStruct As Integer = Marshal.SizeOf(
                   GetType(PICTDESC.Icon))
                 Friend picType As Integer = PICTDESC.PICTYPE_ICON
                 Friend hicon As IntPtr = IntPtr.Zero
@@ -1206,9 +1225,9 @@ Namespace CreateAssemblyFromExcelAddin
                 End Sub
             End Class
 
-            <StructLayout(LayoutKind.Sequential)> _
+            <StructLayout(LayoutKind.Sequential)>
             Public Class Bitmap
-                Friend cbSizeOfStruct As Integer = Marshal.SizeOf( _
+                Friend cbSizeOfStruct As Integer = Marshal.SizeOf(
                   GetType(PICTDESC.Bitmap))
                 Friend picType As Integer = PICTDESC.PICTYPE_BITMAP
                 Friend hbitmap As IntPtr = IntPtr.Zero
@@ -1221,19 +1240,19 @@ Namespace CreateAssemblyFromExcelAddin
             End Class
         End Class
 
-        Public Shared Function ToIPictureDisp( _
-                          icon As System.Drawing.Icon _
+        Public Shared Function ToIPictureDisp(
+                          icon As System.Drawing.Icon
                           ) As IPictureDisp
             Dim pictIcon As New PICTDESC.Icon(icon)
-            Return OleCreatePictureIndirect(pictIcon, _
+            Return OleCreatePictureIndirect(pictIcon,
                                             iPictureDispGuid, True)
         End Function
 
-        Public Shared Function ToIPictureDisp( _
-                          bmp As System.Drawing.Bitmap _
+        Public Shared Function ToIPictureDisp(
+                          bmp As System.Drawing.Bitmap
                           ) As IPictureDisp
             Dim pictBmp As New PICTDESC.Bitmap(bmp)
-            Return OleCreatePictureIndirect(pictBmp, _
+            Return OleCreatePictureIndirect(pictBmp,
                                             iPictureDispGuid, True)
         End Function
     End Class
@@ -1416,11 +1435,11 @@ Namespace CreateAssemblyFromExcelAddin
     Friend Class ExcelWrapper
         Implements IDisposable
         Private Class Window
-            <DllImport("user32.dll", SetLastError:=True)> _
+            <DllImport("user32.dll", SetLastError:=True)>
             Private Shared Function FindWindow(lpClassName As String, lpWindowName As String) As IntPtr
             End Function
 
-            <DllImport("user32.dll")> _
+            <DllImport("user32.dll")>
             Private Shared Function GetWindowThreadProcessId(hWnd As IntPtr, ByRef ProcessID As IntPtr) As IntPtr
             End Function
 
@@ -1505,7 +1524,7 @@ Namespace CreateAssemblyFromExcelAddin
                 Return m_FileName
             End Get
             Set(value As String)
-                m_FileName = Value
+                m_FileName = value
             End Set
         End Property
         Private m_FileName As String
@@ -1632,7 +1651,7 @@ Namespace CreateAssemblyFromExcelAddin
                     Next
                     Return excelData
                 Catch ex As Exception
-                    
+
                     MessageBox.Show("There was a problem with the sheet name perhaps?" & vbCrLf & ex.Message & vbCrLf & ex.StackTrace)
                     Dim sheetnames As List(Of String) = New List(Of String)
                     For Each ws As Excel.Worksheet In app.Sheets
