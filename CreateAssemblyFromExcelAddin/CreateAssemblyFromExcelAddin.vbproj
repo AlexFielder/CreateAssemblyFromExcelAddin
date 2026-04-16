@@ -1,19 +1,11 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <TargetFramework>net48</TargetFramework>
     <OutputType>Library</OutputType>
-    <StartupObject>
-    </StartupObject>
-    <FileUpgradeFlags>
-    </FileUpgradeFlags>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>false</Deterministic>
+    <StartupObject></StartupObject>
     <MyType>Windows</MyType>
-    <UpgradeBackupLocation>
-    </UpgradeBackupLocation>
-    <ProjectGuid>{E3133B87-5830-4ECA-A611-BE8CABD0D3EF}</ProjectGuid>
-    <OldToolsVersion>3.5</OldToolsVersion>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <PublishUrl>http://localhost/InventorAddIn/</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Web</InstallFrom>
@@ -29,133 +21,79 @@
     <IsWebBootstrapper>true</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
-    <TargetFrameworkProfile />
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+    <Configurations>Debug;Release</Configurations>
+	<ProjectName Condition=" '$(ProjectName)' == '' ">CreateAssemblyFromExcelAddin</ProjectName>
+	<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <OutputPath>bin\Debug\</OutputPath>
-    <DocumentationFile>
-    </DocumentationFile>
-    <DebugSymbols>true</DebugSymbols>
-    <DefineDebug>true</DefineDebug>
-    <DefineTrace>true</DefineTrace>
+    <DocumentationFile></DocumentationFile>
     <NoWarn>42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
-    <DebugType>full</DebugType>
     <RegisterForComInterop>false</RegisterForComInterop>
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
-    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <OutputPath>bin\Release\</OutputPath>
-    <DocumentationFile>
-    </DocumentationFile>
-    <DebugSymbols>false</DebugSymbols>
+    <DocumentationFile></DocumentationFile>
     <DefineDebug>false</DefineDebug>
-    <DefineTrace>true</DefineTrace>
-    <Optimize>true</Optimize>
     <NoWarn>42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
     <DebugType>none</DebugType>
     <RegisterForComInterop>false</RegisterForComInterop>
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
-    <Prefer32Bit>false</Prefer32Bit>
-  </PropertyGroup>
-  <PropertyGroup>
-    <OptionExplicit>On</OptionExplicit>
-  </PropertyGroup>
-  <PropertyGroup>
-    <OptionCompare>Binary</OptionCompare>
-  </PropertyGroup>
-  <PropertyGroup>
-    <OptionStrict>Off</OptionStrict>
-  </PropertyGroup>
-  <PropertyGroup>
-    <OptionInfer>On</OptionInfer>
-  </PropertyGroup>
-  <PropertyGroup>
-    <RootNamespace>CreateAssemblyFromExcelAddin</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Autodesk.Connectivity.Explorer.Extensibility">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.Connectivity.Explorer.Extensibility.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Explorer.Extensibility.dll</HintPath>
     </Reference>
     <Reference Include="Autodesk.Connectivity.Explorer.ExtensibilityTools">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.Connectivity.Explorer.ExtensibilityTools.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Explorer.ExtensibilityTools.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.Extensibility.Framework">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.Connectivity.Extensibility.Framework.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Extensibility.Framework.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.WebServices">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.Connectivity.WebServices.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.WebServices.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.DataManagement.Client.Framework.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Forms">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault.Forms">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Autodesk\Autodesk Vault 2016 SDK\bin\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
+      <Private>True</Private>
     </Reference>
-    <Reference Include="Autodesk.Inventor.interop, Version=18.0.0.0, Culture=neutral, PublicKeyToken=d84147f8b4276564, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <EmbedInteropTypes>False</EmbedInteropTypes>
-      <HintPath>C:\Windows\Microsoft.NET\assembly\GAC_MSIL\Autodesk.Inventor.Interop\v4.0_18.0.0.0__d84147f8b4276564\Autodesk.Inventor.interop.dll</HintPath>
+    <Reference Include="Autodesk.Inventor.Interop">
+      <HintPath>..\..\..\..\Program Files\Autodesk\Inventor 2024\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
     </Reference>
-    <Reference Include="Microsoft.Web.Services3, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Microsoft WSE\v3.0\Microsoft.Web.Services3.dll</HintPath>
-    </Reference>
-    <Reference Include="System">
+    <Reference Update="System">
       <Name>System</Name>
     </Reference>
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
     <Reference Include="System.Web.Services" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Import Include="Microsoft.VisualBasic" />
-    <Import Include="System" />
-    <Import Include="System.Collections" />
-    <Import Include="System.Diagnostics" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="AssemblyInfo.vb" />
-    <Compile Include="FileSelectionForm.Designer.vb">
+    <Compile Update="FileSelectionForm.Designer.vb">
       <DependentUpon>FileSelectionForm.vb</DependentUpon>
     </Compile>
-    <Compile Include="FileSelectionForm.vb">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="My Project\Resources.Designer.vb">
+    <Compile Update="My Project\Resources.Designer.vb">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <Compile Include="StandardAddInServer.vb" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="CreateAssemblyFromExcelAddin.X.manifest" />
-    <None Include="SetupCAFE\SetupCAFE.isl" />
     <None Include="SetupCAFE\SetupCAFE.isproj" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Readme.txt" />
-  </ItemGroup>
-  <ItemGroup />
   <ItemGroup>
     <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
       <Visible>False</Visible>
@@ -174,15 +112,7 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="FileSelectionForm.resx">
-      <DependentUpon>FileSelectionForm.vb</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Include="Icons8-Windows-8-Food-Cafe.ico" />
-    <EmbeddedResource Include="My Project\Resources.resx">
-      <CustomToolNamespace>My.Resources</CustomToolNamespace>
-      <Generator>VbMyResourcesResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.vb</LastGenOutput>
-    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <COMReference Include="Microsoft.Office.Core">
@@ -226,15 +156,27 @@
     <EmbeddedResource Include="fin.mp3" />
     <Content Include="SetupCAFE\SetupCAFE.iss" />
   </ItemGroup>
-  <Import Project="$(MSBuildBinPath)\Microsoft.VisualBasic.targets" />
+  <ItemGroup>
+    <None Update="CreateAssemblyFromExcelAddin.Inventor.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
   <PropertyGroup>
-    <PreBuildEvent>
-    </PreBuildEvent>
-    <PostBuildEvent>call "%25VS110COMNTOOLS%25vsvars32"
-			mt.exe -manifest "$(ProjectDir)CreateAssemblyFromExcelAddin.X.manifest" -outputresource:"$(TargetPath)";#2
-XCopy "$(ProjectDir)Autodesk.CreateAssemblyFromExcelAddin.Inventor.addin" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
-XCopy "$(TargetPath)" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
-XCopy "$(TargetDir)$(TargetName).pdb" "%AppData%\Autodesk\ApplicationPlugins\$(TargetName)\" /Y /R
-</PostBuildEvent>
+	  <PostBuildEvent>
+		  echo Configuration: $(Configuration)
+		  echo SolutionDir: $(SolutionDir)
+		  echo OutDir: $(OutDir)
+		  echo ProjectDir: $(ProjectDir)
+		  echo ProjectName: $(ProjectName)
+		  echo TargetDir: $(TargetDir)
+		  if "$(Configuration)"=="Debug" (
+		  XCopy "$(TargetDir)*.*" "C:\ProgramData\Autodesk\Inventor Addins\$(ProjectName)\*.*" /Y /R
+		  if not exist "C:\Logs" mkdir "C:\Logs"
+		  )
+		  if "$(Configuration)"=="Release" (
+		  cd "$(ProjectDir)\Installer"
+		  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
+		  )
+	  </PostBuildEvent>
   </PropertyGroup>
 </Project>

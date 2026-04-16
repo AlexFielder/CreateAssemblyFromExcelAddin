@@ -1,0 +1,14 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="CD_ROM" />
+    <BuildType Name="Debug" />
+    <BuildType Name="DVD-5" />
+    <BuildType Name="Release" />
+    <BuildType Name="SingleImage" />
+  </Configurations>
+  <Project Path="CreateAssemblyFromExcelAddin/CreateAssemblyFromExcelAddin.vbproj">
+    <BuildType Solution="CD_ROM|*" Project="Release" />
+    <BuildType Solution="DVD-5|*" Project="Debug" />
+    <BuildType Solution="SingleImage|*" Project="Release" />
+  </Project>
+</Solution>

@@ -154,3 +154,8 @@ $RECYCLE.BIN/
 
 # Mac desktop service store files
 .DS_Store
+/.vs/CreateAssemblyFromExcelAddin/CopilotIndices
+/.vs/CreateAssemblyFromExcelAddin/copilot-chat
+/.vs/CreateAssemblyFromExcelAddin/FileContentIndex
+/.vs
+nppBackup/

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CreateAssemblyFromExcelAddin": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Autodesk\\Inventor 2024\\Bin\\Inventor.exe"
+    }
+  }
+}
