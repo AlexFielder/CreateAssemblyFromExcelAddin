@@ -145,20 +145,42 @@ Namespace CreateAssemblyFromExcelAddin
 
         Private btnDef As Inventor.ButtonDefinition
         Private Sub Command1Method()
-            If TypeOf m_inventorApplication.ActiveDocument Is PartDocument Then
-                MessageBox.Show("Needs to be run from the highest-level Assembly file!")
-            Else
-                m_conn = Vault.Forms.Library.Login(Nothing)
-                If m_conn Is Nothing Then
-                    MessageBox.Show("Vault login was cancelled or failed. Exiting.")
-                    Exit Sub
-                End If
-                ' Persist the logged-in user's Vault Working Folder to appsettings.json, then
-                ' reload so that all subsequent file/reference paths come from the captured value.
-                CafeSettings.CaptureFromVault(m_conn)
-                m_settings = CafeSettings.Load()
-                RunCAFE(m_inventorApplication.ActiveDocument)
+            ' ── Pre-flight checks (cheapest first — fail before the Vault login prompt) ──
+
+            Dim activeDoc As Inventor.Document = m_inventorApplication.ActiveDocument
+            If activeDoc Is Nothing Then
+                MessageBox.Show("No active document. Please open the top-level assembly and try again.")
+                Exit Sub
             End If
+
+            If TypeOf activeDoc Is PartDocument Then
+                MessageBox.Show("Needs to be run from the highest-level Assembly file!")
+                Exit Sub
+            End If
+
+            ' The add-in places sibling files next to the active assembly and writes references
+            ' using its directory — which requires the document to have been saved to disk at least
+            ' once.  Inventor reports an empty FullFileName for a document that has never been saved.
+            If String.IsNullOrEmpty(activeDoc.FullFileName) Then
+                MessageBox.Show("The active assembly has not been saved yet." & vbCrLf &
+                                "Please save it to disk before running Create Assembly From Excel.",
+                                "Save required",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning)
+                Exit Sub
+            End If
+
+            ' ── Safe to proceed: authenticate against the Vault ──
+            m_conn = Vault.Forms.Library.Login(Nothing)
+            If m_conn Is Nothing Then
+                MessageBox.Show("Vault login was cancelled or failed. Exiting.")
+                Exit Sub
+            End If
+            ' Persist the logged-in user's Vault Working Folder to appsettings.json, then
+            ' reload so that all subsequent file/reference paths come from the captured value.
+            CafeSettings.CaptureFromVault(m_conn)
+            m_settings = CafeSettings.Load()
+            RunCAFE(activeDoc)
         End Sub
 
         ''' <summary>
@@ -168,6 +190,59 @@ Namespace CreateAssemblyFromExcelAddin
         Private Function TemplatePath(templateFileName As String) As String
             Return System.IO.Path.Combine(m_settings.VaultWorkingFolder, "Designs", templateFileName)
         End Function
+
+        ''' <summary>
+        ''' Excel-first hierarchy builder (Option A).
+        ''' Populates <see cref="CompleteListFromSystemDrive"/> directly from <see cref="PartsListFromExcel"/>
+        ''' by walking the PARENT→DRAWING NUMBER graph breadth-first to compute levels.
+        ''' No folder scan, no regex, no hardcoded prefixes.
+        ''' </summary>
+        Private Sub BuildHierarchyFromExcel()
+            ' The top-level parent name is the display name of the open assembly (no extension).
+            parentAssemblyFilename = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName)
+
+            ' Build a lookup: PartNo -> SubObjectCls for quick child resolution.
+            Dim byPartNo As New Dictionary(Of String, SubObjectCls)(StringComparer.OrdinalIgnoreCase)
+            For Each item In PartsListFromExcel
+                If Not String.IsNullOrWhiteSpace(item.PartNo) AndAlso Not byPartNo.ContainsKey(item.PartNo) Then
+                    byPartNo(item.PartNo) = item
+                End If
+            Next
+
+            ' BFS queue: seed with items whose PARENT matches the open assembly.
+            Dim queue As New Queue(Of SubObjectCls)()
+            For Each item In PartsListFromExcel
+                If String.Equals(item.ParentAssembly, parentAssemblyFilename, StringComparison.OrdinalIgnoreCase) Then
+                    item.Level = 1
+                    queue.Enqueue(item)
+                    CompleteListFromSystemDrive.Add(item)
+                End If
+            Next
+
+            ' Walk children level by level.
+            While queue.Count > 0
+                Dim parent As SubObjectCls = queue.Dequeue()
+                Dim childLevel As Long = parent.Level + 1
+                For Each item In PartsListFromExcel
+                    If String.Equals(item.ParentAssembly, parent.PartNo, StringComparison.OrdinalIgnoreCase) _
+                       AndAlso item.Level = 0 Then  ' not yet visited
+                        item.Level = childLevel
+                        queue.Enqueue(item)
+                        CompleteListFromSystemDrive.Add(item)
+                    End If
+                Next
+            End While
+
+            ' Safety net: any orphans (PARENT doesn't match anything) go at level 999
+            ' so they're visible in diagnostics but won't silently disappear.
+            For Each item In PartsListFromExcel
+                If item.Level = 0 Then
+                    item.Level = 999
+                    CompleteListFromSystemDrive.Add(item)
+                    System.Diagnostics.Debug.WriteLine("CAFE orphan: " & item.PartNo & " (PARENT=" & item.ParentAssembly & ")")
+                End If
+            Next
+        End Sub
 
         ''' <summary>
         ''' Returns the relevant resource from the compiled .dll file
@@ -214,41 +289,49 @@ Namespace CreateAssemblyFromExcelAddin
             End If
             Dim ExcelDataTable As DataTable = xlds.Tables(0)
 
-            Dim rowNum As Integer = 3
+            ' rowNum tracks the spreadsheet row currently under consideration (1-based).
+            ' GetExcelData(filetab) uses Excel row 2 as its column-header source and then begins
+            ' populating the DataTable from row 2 as well, so DataTable.Rows(0) mirrors the header
+            ' row (each cell's value equals its column's name). We therefore need to skip until
+            ' rowNum >= 3, which is what the original `Dim rowNum As Integer = 3` was intended
+            ' to gate — but the variable was only incremented, never read.
+            Dim rowNum As Integer = 2
             For Each row As DataRow In ExcelDataTable.Rows
-                Dim SO As SubObjectCls = New SubObjectCls()
-                For i = 0 To ExcelDataTable.Columns.Count - 1
-                    Dim column As DataColumn = ExcelDataTable.Columns(i)
-                    Select Case column.ColumnName
-                        Case "DRAWING NUMBER"
-                            SO.PartNo = row(column).ToString
-                        Case "DRAWING TITLE"
-                            If row(column).ToString.Contains("N/A") Then
-                                SO.LegacyDescr = "REFER TO PDF"
-                            Else
-                                SO.LegacyDescr = row(column).ToString
-                            End If
+                If rowNum >= 3 Then
+                    Dim SO As SubObjectCls = New SubObjectCls()
+                    For i = 0 To ExcelDataTable.Columns.Count - 1
+                        Dim column As DataColumn = ExcelDataTable.Columns(i)
+                        Select Case column.ColumnName
+                            Case "DRAWING NUMBER"
+                                SO.PartNo = row(column).ToString
+                            Case "DRAWING TITLE"
+                                If row(column).ToString.Contains("N/A") Then
+                                    SO.LegacyDescr = "REFER TO PDF"
+                                Else
+                                    SO.LegacyDescr = row(column).ToString
+                                End If
 
-                        Case "DRAWING REV"
-                            If row(column).ToString.Contains("N/A") Then
-                                SO.LegacyRev = "REFER TO PDF"
-                            Else
-                                SO.LegacyRev = row(column).ToString
-                            End If
-                        Case "LEGACY DRAWING NUMBER"
-                            If row(column).ToString.Contains("N/A") Then
-                                SO.LegacyDrawingNo = "REFER TO PDF"
-                            Else
-                                SO.LegacyDrawingNo = row(column).ToString
-                            End If
-                        Case "PARENT"
-                            SO.ParentAssembly = row(column).ToString
-                        Case "VAULTED NAME"
-                            SO.FileName = row(column).ToString
-                        Case Else
-                    End Select
-                Next
-                PartsListFromExcel.Add(SO)
+                            Case "DRAWING REV"
+                                If row(column).ToString.Contains("N/A") Then
+                                    SO.LegacyRev = "REFER TO PDF"
+                                Else
+                                    SO.LegacyRev = row(column).ToString
+                                End If
+                            Case "LEGACY DRAWING NUMBER"
+                                If row(column).ToString.Contains("N/A") Then
+                                    SO.LegacyDrawingNo = "REFER TO PDF"
+                                Else
+                                    SO.LegacyDrawingNo = row(column).ToString
+                                End If
+                            Case "PARENT"
+                                SO.ParentAssembly = row(column).ToString
+                            Case "VAULTED NAME"
+                                SO.FileName = row(column).ToString
+                            Case Else
+                        End Select
+                    Next
+                    PartsListFromExcel.Add(SO)
+                End If
                 rowNum += 1
             Next
             StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
@@ -260,38 +343,45 @@ Namespace CreateAssemblyFromExcelAddin
         End Sub
 
         ''' <summary>
-        ''' Begins our Create Assembly subroutine
+        ''' Begins our Create Assembly subroutine.
+        ''' In <c>Excel</c> mode the hierarchy is built directly from the spreadsheet data.
+        ''' In <c>FolderScan</c> mode the legacy folder-parsing path is used.
         ''' </summary>
-        ''' <remarks>Uses the PartsList object passed to it from Inventor (which was ulitmately created from Excel data.</remarks>
         Public Sub BeginCreateAssemblyStructure()
-            'define the parent assembly
-            If StartFolder = String.Empty Then
-                StartFolder = System.Environment.SpecialFolder.MyComputer
-            End If
-            Dim DirStruct As DirectoryInfo = New DirectoryInfo(StartFolder)
-            Dim dlg1 = New FolderBrowserDialog
-            dlg1.Description = "Select a folder to work with:"
-            dlg1.ShowNewFolderButton = True
-            dlg1.SelectedPath = StartFolder
-            'dlg1.RootFolder = StartFolder
-            Dim result As DialogResult = dlg1.ShowDialog()
-            If result = DialogResult.OK Then
-                DirStruct = New DirectoryInfo(dlg1.SelectedPath)
+            If m_settings.HierarchySource = HierarchySourceMode.Excel Then
+                ' ── Excel-first path ──────────────────────────────────────────────
+                ' Hierarchy is already in PartsListFromExcel; compute levels via BFS.
+                BuildHierarchyFromExcel()
             Else
-                MessageBox.Show("You need to pick a folder for this to work")
-                Exit Sub
+                ' ── Legacy folder-scan path ───────────────────────────────────────
+                If StartFolder = String.Empty Then
+                    StartFolder = System.Environment.SpecialFolder.MyComputer
+                End If
+                Dim DirStruct As DirectoryInfo = New DirectoryInfo(StartFolder)
+                Dim dlg1 = New FolderBrowserDialog
+                dlg1.Description = "Select a folder to work with:"
+                dlg1.ShowNewFolderButton = True
+                dlg1.SelectedPath = StartFolder
+                Dim result As DialogResult = dlg1.ShowDialog()
+                If result = DialogResult.OK Then
+                    DirStruct = New DirectoryInfo(dlg1.SelectedPath)
+                Else
+                    MessageBox.Show("You need to pick a folder for this to work")
+                    Exit Sub
+                End If
+                dlg1.Dispose()
+                Dim asmDoc As AssemblyDocument
+                Try
+                    asmDoc = m_inventorApplication.ActiveDocument
+                Catch ex As Exception
+                    MessageBox.Show("You need to have an assembly open, not a part!")
+                End Try
+                parentAssemblyFilename = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName)
+                Dim level As Long = 0
+                ParseFolders(DirStruct, level)
             End If
-            dlg1.Dispose()
-            Dim asmDoc As AssemblyDocument
-            Try
-                asmDoc = m_inventorApplication.ActiveDocument
-            Catch ex As Exception
-                MessageBox.Show("You need to have an assembly open, not a part!")
-            End Try
-            parentAssemblyFilename = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName)
-            Dim level As Long = 0
-            ParseFolders(DirStruct, level)
-            'here is where we need to query the vault/download files
+
+            ' ── Common path: Vault search, download, filter, create ────────────
             BeginRePopulateCompleteList()
             GetLatestFilesFromVault()
             EditedListFromSystemDrive = CompleteListFromSystemDrive
@@ -338,7 +428,7 @@ Namespace CreateAssemblyFromExcelAddin
                 End If
             Next
             MessageBox.Show(CompleteListFromSystemDrive.Count)
-            PlayBackgroundSoundResource()
+            'PlayBackgroundSoundResource()
         End Sub
 
         Sub PlayBackgroundSoundResource()
@@ -353,11 +443,16 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <remarks></remarks>
         Private Sub BeginRePopulateCompleteList()
             DoInitialSearch()
-            'Dim results As List(Of Autodesk.Connectivity.WebServices.File) = New List(Of ACW.File)()
+            ' DoInitialSearch now filters by extension server-side, so no extension post-filter
+            ' is needed here.  The "Replace With" / underscore exclusions remain — they encode
+            ' project-level naming conventions, not a safety net for the search.
             If VaultedFileList.Count > 0 Then
                 VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().StartsWith("replace with"))
                 VaultedFileList.RemoveAll(Function(x) x.Name.ToLower().Contains("_"))
-                VaultedFileList = VaultedFileList.FindAll(Function(x) x.Name.EndsWith(".ipt") Or x.Name.EndsWith(".iam"))
+            End If
+            If VaultedFileList.Count = 0 Then
+                FileAssocLiteArrays = New ACW.FileAssocLite() {}
+                Return
             End If
             FileAssocLiteArrays = m_conn.WebServiceManager.DocumentService.GetFileAssociationLitesByIds(
                 VaultedFileList.Select(Function(x) x.Id).ToArray(),
@@ -392,124 +487,259 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <summary>
         ''' Based on the implementation in the QueryVault Excel addin, this will attempt to take the CompleteList object, extract the "friendly" filenames
         ''' and search the vault for them.
-        ''' Then we'll need to remove the files which are children of vaulted components from CompleteList
+        ''' Then we'll need to remove the files which are children of vaulted components from CompleteList.
         ''' </summary>
-        ''' <remarks></remarks>
+        ''' <remarks>
+        ''' Historical bug: this routine used <c>SrchOper = 1</c> (which is <em>Contains</em>, not
+        ''' <em>Is Equal To</em>), a hardcoded <c>PropDefId = 9</c>, and did not filter empty PartNo
+        ''' values before building the conditions.  Combined with <see cref="SearchRuleType.May"/>
+        ''' (OR), a single blank drawing-number row in the tracker produced a "contains empty string"
+        ''' condition that matched every file in the Vault.  The post-filter at the caller (by
+        ''' <c>.ipt/.iam</c> extension) then filtered only the local list — so every Inventor file
+        ''' in the Vault ended up in <see cref="VaultedFileList"/>.
+        '''
+        ''' The rewrite:
+        ''' <list type="bullet">
+        '''   <item>Trims empty/null/whitespace PartNos before building conditions.</item>
+        '''   <item>Resolves the filename property ID dynamically via <c>ClientFileName</c> rather
+        '''   than hardcoding a magic number.</item>
+        '''   <item>Uses <c>SrchOper = 3</c> (Is Equal To) and searches the full filename
+        '''   (<c>PartNo &amp; extension</c>) so the extension filter happens server-side.</item>
+        '''   <item>Batches conditions in chunks to stay under Vault's practical OR-condition limit.</item>
+        ''' </list>
+        ''' Reference implementations: <c>JobExtension.cs</c> (line 282) and
+        ''' <c>iLogicVltInvSrvLibrary.cs</c> (line 1116) in <c>AFGeneral\Samples\MarkusKoechl</c>.
+        ''' </remarks>
         Private Sub DoInitialSearch()
             UpdateStatusBar("Getting Initial File details (If available) From Vault... Please Wait")
-            Dim NonVaultedFileNames As String() = CompleteListFromSystemDrive.Select(Function(x) x.PartNo).ToArray()
-            NonVaultedFileNames = NonVaultedFileNames.Distinct.ToArray()
-            'build the search based on our range of Distinct (potentially non-vaulted) filenames.
-            Dim conditions As SrchCond() = New SrchCond(NonVaultedFileNames.Length - 1) {}
-            Dim percent As Double = Nothing
-            For i As Integer = 0 To NonVaultedFileNames.Length - 1
-                'UpdateStatusBar(percent, "Building Initial Search Conditions... Please Wait")
-                Dim searchCondition As New SrchCond()
-                searchCondition.PropDefId = 9
-                'filename
-                searchCondition.PropTyp = PropertySearchType.SingleProperty
-                searchCondition.SrchOper = 1
-                searchCondition.SrchTxt = NonVaultedFileNames(i)
-                searchCondition.SrchRule = SearchRuleType.May
-                conditions(i) = searchCondition
-            Next
-            Dim bookmark As String = String.Empty
-            Dim status As SrchStatus = Nothing
+
+            ' Always reset the output list so repeat runs don't accumulate.
             VaultedFileList = New List(Of ACW.File)()
 
-            While status Is Nothing OrElse VaultedFileList.Count < status.TotalHits
-                Dim files As Autodesk.Connectivity.WebServices.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(conditions, Nothing, Nothing, True, True, bookmark,
-                    status)
-                If files IsNot Nothing Then
-                    VaultedFileList.AddRange(files)
-                    percent = (CDbl(VaultedFileList.Count) / status.TotalHits)
-                    UpdateStatusBar(percent, "Searching the Vault... Please Wait")
+            ' 1. Filter out empty / whitespace / null PartNo values BEFORE building conditions.
+            Dim NonVaultedFileNames As String() = CompleteListFromSystemDrive _
+                .Select(Function(x) x.PartNo) _
+                .Where(Function(s) Not String.IsNullOrWhiteSpace(s)) _
+                .Select(Function(s) s.Trim()) _
+                .Distinct(StringComparer.OrdinalIgnoreCase) _
+                .ToArray()
+
+            If NonVaultedFileNames.Length = 0 Then
+                ' Nothing valid to search for — avoid the round-trip entirely.
+                FileIterations = New List(Of VDF.Vault.Currency.Entities.FileIteration)()
+                FolderIdsToFolderEntities = New Dictionary(Of Long, VDF.Vault.Currency.Entities.Folder)()
+                Return
+            End If
+
+            ' 2. Resolve the filename PropDefId dynamically.
+            Dim namePropDefId As Long
+            Try
+                Dim filePropDefs As ACW.PropDef() = m_conn.WebServiceManager.PropertyService.GetPropertyDefinitionsByEntityClassId("FILE")
+                Dim namePropDef As ACW.PropDef = filePropDefs.FirstOrDefault(Function(n) n.SysName = "ClientFileName")
+                If namePropDef Is Nothing Then
+                    MessageBox.Show("Vault 'ClientFileName' property definition could not be resolved — initial search aborted.")
+                    FileIterations = New List(Of VDF.Vault.Currency.Entities.FileIteration)()
+                    FolderIdsToFolderEntities = New Dictionary(Of Long, VDF.Vault.Currency.Entities.Folder)()
+                    Return
                 End If
-            End While
-            'get all FileIterations
-            FileIterations = New List(Of Vault.Currency.Entities.FileIteration)(VaultedFileList.[Select](Function(result) New VDF.Vault.Currency.Entities.FileIteration(m_conn, result)))
-            'FileIterations = VaultedFileList.Select(Function(result) New VDF.Vault.Currency.Entities.FileIteration(m_conn, result))
-            'then get all the folders for these files
-            FolderIdsToFolderEntities = m_conn.FolderManager.GetFoldersByIds(FileIterations.Select(Function(file) file.FolderId))
+                namePropDefId = namePropDef.Id
+            Catch ex As Exception
+                MessageBox.Show("Failed to resolve Vault property definitions: " & ex.Message)
+                FileIterations = New List(Of VDF.Vault.Currency.Entities.FileIteration)()
+                FolderIdsToFolderEntities = New Dictionary(Of Long, VDF.Vault.Currency.Entities.Folder)()
+                Return
+            End Try
+
+            ' 3. Run two separate searches (one per Inventor extension) and union the results.
+            '    Server-side extension filtering slashes the bandwidth cost versus pulling
+            '    everything and filtering on Name.EndsWith(".ipt"/".iam") client-side.
+            RunFilenameSearch(NonVaultedFileNames, namePropDefId, ".iam")
+            RunFilenameSearch(NonVaultedFileNames, namePropDefId, ".ipt")
+
+            ' Belt-and-braces: de-duplicate on File.Id.
+            VaultedFileList = VaultedFileList _
+                .GroupBy(Function(f) f.Id) _
+                .Select(Function(g) g.First()) _
+                .ToList()
+
+            ' 4. Resolve FileIterations and their containing folders (unchanged behaviour).
+            FileIterations = New List(Of VDF.Vault.Currency.Entities.FileIteration)(
+                VaultedFileList.Select(Function(result) New VDF.Vault.Currency.Entities.FileIteration(m_conn, result)))
+            If FileIterations.Count > 0 Then
+                FolderIdsToFolderEntities = m_conn.FolderManager.GetFoldersByIds(FileIterations.Select(Function(file) file.FolderId))
+            Else
+                FolderIdsToFolderEntities = New Dictionary(Of Long, VDF.Vault.Currency.Entities.Folder)()
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Executes a batched filename search against the Vault for the given
+        ''' <paramref name="extension"/> (e.g. <c>.iam</c>, <c>.ipt</c>) and appends
+        ''' matches to <see cref="VaultedFileList"/>.
+        ''' </summary>
+        ''' <param name="partNumbers">
+        ''' Distinct, non-empty drawing numbers to look up.  The search term per condition is
+        ''' <c>partNumber &amp; extension</c>, matched exactly.
+        ''' </param>
+        ''' <param name="namePropDefId">
+        ''' The resolved ID of the Vault <c>ClientFileName</c> property (looked up dynamically
+        ''' rather than hardcoded — see <see cref="DoInitialSearch"/> remarks).
+        ''' </param>
+        ''' <param name="extension">
+        ''' File extension including the leading dot — e.g. <c>".iam"</c> or <c>".ipt"</c>.
+        ''' </param>
+        ''' <remarks>
+        ''' Conditions are split into chunks of <c>BatchSize</c> to stay under Vault's practical
+        ''' limit on OR'd conditions per <c>FindFilesBySearchConditions</c> call.  Each batch
+        ''' is paged internally via the returned bookmark.
+        ''' </remarks>
+        Private Sub RunFilenameSearch(partNumbers As String(), namePropDefId As Long, extension As String)
+            Const BatchSize As Integer = 50
+
+            For batchStart As Integer = 0 To partNumbers.Length - 1 Step BatchSize
+                Dim batchLength As Integer = Math.Min(BatchSize, partNumbers.Length - batchStart)
+                Dim conditions As New List(Of SrchCond)()
+
+                ' One "May" (OR'd) exact-match condition per PartNo, with the extension appended
+                ' so Vault filters by type server-side.
+                For i As Integer = 0 To batchLength - 1
+                    Dim partNo As String = partNumbers(batchStart + i)
+                    conditions.Add(New SrchCond() With {
+                        .PropDefId = namePropDefId,
+                        .PropTyp = PropertySearchType.SingleProperty,
+                        .SrchOper = 3,
+                        .SrchTxt = partNo & extension,
+                        .SrchRule = SearchRuleType.May
+                    })
+                Next
+
+                Dim conditionArray As SrchCond() = conditions.ToArray()
+                Dim bookmark As String = String.Empty
+                Dim status As SrchStatus = Nothing
+                Dim batchResultsCount As Integer = 0
+
+                While status Is Nothing OrElse batchResultsCount < status.TotalHits
+                    Dim files As ACW.File() = m_conn.WebServiceManager.DocumentService.FindFilesBySearchConditions(
+                        conditionArray, Nothing, Nothing, True, True, bookmark, status)
+                    If files Is Nothing OrElse files.Length = 0 Then
+                        Exit While
+                    End If
+                    VaultedFileList.AddRange(files)
+                    batchResultsCount += files.Length
+                    If status IsNot Nothing AndAlso status.TotalHits > 0 Then
+                        Dim percent As Double = CDbl(batchResultsCount) / status.TotalHits
+                        UpdateStatusBar(percent, "Searching the Vault (" & extension & ")... Please Wait")
+                    End If
+                End While
+            Next
         End Sub
 
 
 
+        ' ══════════════════════════════════════════════════════════════════════
+        ' REPLACE the existing CreateAssemblyComponents function with this one.
+        ' It removes the AS-/DT-/DL- prefix branching and instead derives the
+        ' file type from SubObject.FileName (VAULTED NAME column in Excel mode,
+        ' or the computed extension in FolderScan mode).
+        ' Template files are configurable via appsettings.json "Templates" section,
+        ' or replaced entirely by Inventor's default templates when
+        ' "UseInventorDefaults" is true.
+        ' ══════════════════════════════════════════════════════════════════════
+
         ''' <summary>
-        ''' Creates dummy files to pre-populate Vault with or creates files named "Replace With " to denote where files already exist.
+        ''' Creates dummy files to pre-populate Vault with, using either:
+        '''   (a) custom template files configured in <c>appsettings.json</c>, or
+        '''   (b) Inventor's built-in default templates.
+        ''' The file type (.iam/.ipt) is determined from <see cref="SubObjectCls.FileName"/>
+        ''' (the VAULTED NAME column), removing the dependency on part-number prefix conventions.
         ''' </summary>
-        ''' <param name="subObject">The Subobject we need to create/replace</param>
-        ''' <returns>Returns the filename of the newly created dummy Part/Assemly</returns>
-        ''' <remarks></remarks>
+        ''' <param name="subObject">The Subobject we need to create/replace.</param>
+        ''' <returns>The full path of the newly created or existing file.</returns>
         Private Function CreateAssemblyComponents(SubObject As SubObjectCls) As String
             Dim basepartname As String = String.Empty
             Dim basecablepartname As String = String.Empty
             Dim newfilename As String = String.Empty
             Dim NewCablePartName As String = String.Empty
             Try
+                ' Align iProperties from Excel data if available.
                 Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
                 If Not i = -1 Then
                     AligniPropertyValues(SubObject, PartsListFromExcel(i))
                 End If
-                If SubObject.PartNo.StartsWith("AS-", StringComparison.Ordinal) Then
-                    If Not SubObject.LegacyDescr Is Nothing Then
-                        If SubObject.LegacyDescr.ToLower.Contains("cable") Then
-                            newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = TemplatePath("DT-99999-000 CABLE.iam")
-                            basecablepartname = TemplatePath("DT-99999-000 CABLE.ipt")
-                            NewCablePartName = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
-                        Else
-                            newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = TemplatePath("DT-99999-000.iam")
-                        End If
-                    Else
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                        basepartname = TemplatePath("DT-99999-000.iam")
-                    End If
-                ElseIf SubObject.PartNo.StartsWith("DT-", StringComparison.Ordinal) Then
-                    If Not SubObject.LegacyDescr Is Nothing Then
-                        If SubObject.LegacyDescr.Contains("ASSEMBLY") Or SubObject.LegacyDescr.Contains("ASSY") Then
-                            newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".iam"
-                            basepartname = TemplatePath("DT-99999-000.iam")
-                        Else
-                            newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
-                            basepartname = TemplatePath("DT-99999-000.ipt")
-                        End If
-                    Else
-                        newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\" & SubObject.PartNo & ".ipt"
-                        basepartname = TemplatePath("DT-99999-000.ipt")
-                    End If
-                ElseIf SubObject.PartNo.StartsWith("DL-", StringComparison.Ordinal) Then
-                    'technically this assembly is missing from the structure!
-                    newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) &
-                        "\" & GetFriendlyDirName(SubObject.PartNo) & ".iam"
-                    basepartname = TemplatePath("DT-99999-000.iam")
+
+                ' ── Determine type from VAULTED NAME extension (works in both modes) ──
+                Dim ext As String = ".ipt"  ' safe default
+                If Not String.IsNullOrWhiteSpace(SubObject.FileName) Then
+                    ext = System.IO.Path.GetExtension(SubObject.FileName)
+                End If
+                Dim isAssembly As Boolean = ext.Equals(".iam", StringComparison.OrdinalIgnoreCase)
+
+                ' Cable detection: title contains "cable" and the target is an assembly.
+                Dim isCable As Boolean = isAssembly AndAlso
+                    Not SubObject.LegacyDescr Is Nothing AndAlso
+                    SubObject.LegacyDescr.IndexOf("cable", StringComparison.OrdinalIgnoreCase) >= 0
+
+                ' Target filename: always placed beside the active document.
+                Dim activeDir As String = System.IO.Path.GetDirectoryName(
+                    m_inventorApplication.ActiveDocument.FullDocumentName)
+                newfilename = System.IO.Path.Combine(activeDir, SubObject.PartNo & ext)
+
+                ' Cable assemblies also need a companion .ipt.
+                If isCable Then
+                    NewCablePartName = System.IO.Path.Combine(activeDir, SubObject.PartNo & ".ipt")
                 End If
 
-                'check if the file exists locally and copy a template to create it if not.
-                If Not System.IO.File.Exists(newfilename) Then 'we need to create it - but we also might need to search the local working folder for it too...?
-                    'MessageBox.Show("Looking for: " + newfilename, "Finding Files!")
+                ' ── Resolve template source ───────────────────────────────────────
+                If Not m_settings.UseInventorDefaults Then
+                    ' Use configurable template filenames from appsettings.json,
+                    ' resolved under <VaultWorkingFolder>\Designs\.
+                    If isCable Then
+                        basepartname = TemplatePath(m_settings.CableAssemblyTemplate)
+                        basecablepartname = TemplatePath(m_settings.CablePartTemplate)
+                    ElseIf isAssembly Then
+                        basepartname = TemplatePath(m_settings.AssemblyTemplate)
+                    Else
+                        basepartname = TemplatePath(m_settings.PartTemplate)
+                    End If
+                End If
+                ' (If UseInventorDefaults is True, basepartname stays empty
+                '  and we create from Inventor's defaults below.)
+
+                ' ── Create the file if it doesn't already exist locally ────────────
+                If Not System.IO.File.Exists(newfilename) Then
                     Dim expectedfileextension As String = System.IO.Path.GetExtension(newfilename)
                     Dim tmpstr As String = FindFileInVWF(newfilename)
+
                     If tmpstr = String.Empty Then
-                        'it doesn't exist anywhere else in the Local Vault Working Folder
-                        System.IO.File.Copy(basepartname, newfilename)
-                        If Not NewCablePartName = String.Empty Then
-                            System.IO.File.Copy(basecablepartname, NewCablePartName)
-                            NewCablePartName = Nothing
+                        ' It doesn't exist anywhere in the local Vault Working Folder.
+                        If m_settings.UseInventorDefaults Then
+                            ' Create from Inventor's built-in default templates.
+                            CreateFromInventorDefault(newfilename, isAssembly)
+                            If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
+                               Not System.IO.File.Exists(NewCablePartName) Then
+                                CreateFromInventorDefault(NewCablePartName, False)
+                            End If
+                        Else
+                            ' Copy from the configured template file.
+                            System.IO.File.Copy(basepartname, newfilename)
+                            If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
+                               Not System.IO.File.Exists(NewCablePartName) Then
+                                System.IO.File.Copy(basecablepartname, NewCablePartName)
+                            End If
                         End If
                     Else
-                        'it does exist and we (Currently) are creating a placeholder file to replace later, although this creates its own issues!
+                        ' File was found elsewhere in VWF — reuse or copy template over it.
                         newfilename = foundfile.FullName
-                        'newfilename = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName) & "\Replace with " & foundfile.Name
                         If Not System.IO.Path.GetExtension(newfilename) = expectedfileextension Then
-                            'correct the extension or Inventor will shit the bed
                             newfilename = Left(newfilename, newfilename.Length - 4) & expectedfileextension
                         End If
                         If Not System.IO.File.Exists(newfilename) Then
-                            System.IO.File.Copy(basepartname, newfilename)
+                            If m_settings.UseInventorDefaults Then
+                                CreateFromInventorDefault(newfilename, isAssembly)
+                            Else
+                                System.IO.File.Copy(basepartname, newfilename)
+                            End If
                         End If
-                        'need to empty the foundfile object so it can be reused/found on the next file.
                         foundfile = Nothing
                     End If
                 End If
@@ -518,6 +748,36 @@ Namespace CreateAssemblyFromExcelAddin
             End Try
             Return newfilename
         End Function
+
+        ''' <summary>
+        ''' Creates a new empty Part or Assembly document using Inventor's default templates,
+        ''' saves it to <paramref name="targetPath"/>, then closes it invisibly.
+        ''' Slower than <c>File.Copy</c> but removes the dependency on pre-staged template files.
+        ''' </summary>
+        ''' <param name="targetPath">Full path where the new file should be saved.</param>
+        ''' <param name="isAssembly"><see langword="True"/> for .iam, <see langword="False"/> for .ipt.</param>
+        Private Sub CreateFromInventorDefault(targetPath As String, isAssembly As Boolean)
+            Dim docType As DocumentTypeEnum = If(isAssembly,
+                DocumentTypeEnum.kAssemblyDocumentObject,
+                DocumentTypeEnum.kPartDocumentObject)
+            Dim doc As Document = Nothing
+            Try
+                ' Create invisible document from Inventor's default template.
+                doc = m_inventorApplication.Documents.Add(docType, , False)
+                doc.SaveAs(targetPath, False)
+            Catch ex As Exception
+                System.Diagnostics.Debug.WriteLine("CreateFromInventorDefault failed: " & ex.Message)
+                Throw
+            Finally
+                If doc IsNot Nothing Then
+                    Try
+                        doc.Close(True)
+                    Catch
+                        ' Swallow close errors — the file is already saved.
+                    End Try
+                End If
+            End Try
+        End Sub
 
         ''' <summary>
         ''' Creates a new occurrence of our subObject if the "subObject.name:1" doesn't already exist

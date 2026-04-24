@@ -83,7 +83,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Inventor.Interop">
-      <HintPath>..\..\..\..\Program Files\Autodesk\Inventor 2024\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Inventor 2024\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
     </Reference>
     <Reference Update="System">
       <Name>System</Name>

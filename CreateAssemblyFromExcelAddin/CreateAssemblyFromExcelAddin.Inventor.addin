@@ -4,12 +4,12 @@
   <ClientId>{38d3b483-2797-4307-92ae-8456410d6801}</ClientId>
   <DisplayName>CreateAssemblyFromExcelAddin</DisplayName>
   <Description>CreateAssemblyFromExcelAddin</Description>
-  <Assembly>CreateAssemblyFromExcelAddin.dll</Assembly>
+  <Assembly>C:\ProgramData\Autodesk\Inventor Addins\CreateAssemblyFromExcelAddin\CreateAssemblyFromExcelAddin.dll</Assembly>
   <LoadOnStartUp>1</LoadOnStartUp>
   <UserUnloadable>1</UserUnloadable>
   <Hidden>0</Hidden>
-  <SupportedSoftwareVersionGreaterThan>28..</SupportedSoftwareVersionGreaterThan>
-  <SupportedSoftwareVersionLessThan>29..</SupportedSoftwareVersionLessThan>
+  <!--<SupportedSoftwareVersionGreaterThan>28..</SupportedSoftwareVersionGreaterThan>-->
+  <SupportedSoftwareVersionLessThan>30..</SupportedSoftwareVersionLessThan>
   <DataVersion>1</DataVersion>
   <UserInterfaceVersion>1</UserInterfaceVersion>
 </Addin>
