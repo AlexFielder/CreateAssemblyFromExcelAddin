@@ -289,52 +289,49 @@ Namespace CreateAssemblyFromExcelAddin
             End If
             Dim ExcelDataTable As DataTable = xlds.Tables(0)
 
-            ' rowNum tracks the spreadsheet row currently under consideration (1-based).
-            ' GetExcelData(filetab) uses Excel row 2 as its column-header source and then begins
-            ' populating the DataTable from row 2 as well, so DataTable.Rows(0) mirrors the header
-            ' row (each cell's value equals its column's name). We therefore need to skip until
-            ' rowNum >= 3, which is what the original `Dim rowNum As Integer = 3` was intended
-            ' to gate — but the variable was only incremented, never read.
-            Dim rowNum As Integer = 2
+            ' GetExcelData(filetab) now starts its data loop from Excel row 3
+            ' (see the fix in FileToProcess), so every DataTable row is real data.
+            ' No row-skipping counter needed here.
             For Each row As DataRow In ExcelDataTable.Rows
-                If rowNum >= 3 Then
-                    Dim SO As SubObjectCls = New SubObjectCls()
-                    For i = 0 To ExcelDataTable.Columns.Count - 1
-                        Dim column As DataColumn = ExcelDataTable.Columns(i)
-                        Select Case column.ColumnName
-                            Case "DRAWING NUMBER"
-                                SO.PartNo = row(column).ToString
-                            Case "DRAWING TITLE"
-                                If row(column).ToString.Contains("N/A") Then
-                                    SO.LegacyDescr = "REFER TO PDF"
-                                Else
-                                    SO.LegacyDescr = row(column).ToString
-                                End If
-
-                            Case "DRAWING REV"
-                                If row(column).ToString.Contains("N/A") Then
-                                    SO.LegacyRev = "REFER TO PDF"
-                                Else
-                                    SO.LegacyRev = row(column).ToString
-                                End If
-                            Case "LEGACY DRAWING NUMBER"
-                                If row(column).ToString.Contains("N/A") Then
-                                    SO.LegacyDrawingNo = "REFER TO PDF"
-                                Else
-                                    SO.LegacyDrawingNo = row(column).ToString
-                                End If
-                            Case "PARENT"
-                                SO.ParentAssembly = row(column).ToString
-                            Case "VAULTED NAME"
-                                SO.FileName = row(column).ToString
-                            Case Else
-                        End Select
-                    Next
+                Dim SO As New SubObjectCls()
+                For i = 0 To ExcelDataTable.Columns.Count - 1
+                    Dim column As DataColumn = ExcelDataTable.Columns(i)
+                    Select Case column.ColumnName
+                        Case "DRAWING NUMBER"
+                            SO.PartNo = row(column).ToString
+                        Case "DRAWING TITLE"
+                            If row(column).ToString.Contains("N/A") Then
+                                SO.LegacyDescr = "REFER TO PDF"
+                            Else
+                                SO.LegacyDescr = row(column).ToString
+                            End If
+                        Case "DRAWING REV"
+                            If row(column).ToString.Contains("N/A") Then
+                                SO.LegacyRev = "REFER TO PDF"
+                            Else
+                                SO.LegacyRev = row(column).ToString
+                            End If
+                        Case "LEGACY DRAWING NUMBER"
+                            If row(column).ToString.Contains("N/A") Then
+                                SO.LegacyDrawingNo = "REFER TO PDF"
+                            Else
+                                SO.LegacyDrawingNo = row(column).ToString
+                            End If
+                        Case "PARENT"
+                            SO.ParentAssembly = row(column).ToString
+                        Case "VAULTED NAME"
+                            SO.FileName = row(column).ToString
+                        Case Else
+                    End Select
+                Next
+                ' Only add rows with a non-empty drawing number — the Excel
+                ' UsedRange can extend beyond the last real data row (empty rows,
+                ' footer notes, etc.) which would produce garbage SubObjectCls entries.
+                If Not String.IsNullOrWhiteSpace(SO.PartNo) Then
                     PartsListFromExcel.Add(SO)
                 End If
-                rowNum += 1
             Next
-            StartFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName))
+            StartFolder = System.IO.Path.GetDirectoryName(m_inventorApplication.ActiveDocument.FullDocumentName)
 
             Dim tr As Transaction
             tr = m_inventorApplication.TransactionManager.StartTransaction(m_inventorApplication.ActiveDocument, "Create Standard Parts From Excel")
@@ -386,8 +383,11 @@ Namespace CreateAssemblyFromExcelAddin
             GetLatestFilesFromVault()
             EditedListFromSystemDrive = CompleteListFromSystemDrive
             Dim grouped = CompleteListFromSystemDrive.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
+            ' Use the same skip logic as the placement loop below: in FolderScan mode
+            ' Level 1 items are pre-existing, so skip them during Vault filtering too.
+            Dim vaultSkipLevel As Long = If(m_settings.HierarchySource = HierarchySourceMode.FolderScan, 1, 0)
             For Each Group In grouped
-                If Group.Key > 1 Then
+                If Group.Key > vaultSkipLevel Then
                     For Each item As SubObjectCls In Group
                         Dim File As ACW.File = (From f In VaultedFileList
                                                 Where f.Name = item.FileName
@@ -414,8 +414,13 @@ Namespace CreateAssemblyFromExcelAddin
             Dim EditedGrouped = EditedListFromSystemDrive.OrderBy(Function(x) x.Level).GroupBy(Function(x) x.Level)
             Dim percent As Double = Nothing
             Dim i As Integer = 0
+            ' In FolderScan mode, Level 1 assemblies already exist in Inventor (they were the
+            ' scanned directories) so we skip them.  In Excel mode, Level 1 items are the
+            ' direct children of the open assembly and MUST be created and placed first,
+            ' otherwise Level 2+ items can never find their parent via AllReferencedDocuments.
+            Dim skipLevel As Long = If(m_settings.HierarchySource = HierarchySourceMode.FolderScan, 1, 0)
             For Each group In EditedGrouped
-                If Not group.Key = 1 Then 'skip the first level as it's our top level assembly!
+                If group.Key > skipLevel Then 'skip level 1 only in FolderScan mode
                     'MessageBox.Show("Level = " & group.Key & " of " & grouped.Count)
                     'If group.Key <= 3 Then
                     For Each subobj As SubObjectCls In group
@@ -660,92 +665,92 @@ Namespace CreateAssemblyFromExcelAddin
             Dim basecablepartname As String = String.Empty
             Dim newfilename As String = String.Empty
             Dim NewCablePartName As String = String.Empty
-            Try
-                ' Align iProperties from Excel data if available.
-                Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
-                If Not i = -1 Then
-                    AligniPropertyValues(SubObject, PartsListFromExcel(i))
-                End If
+            'Try
+            ' Align iProperties from Excel data if available.
+            Dim i As Integer = PartsListFromExcel.FindIndex(Function(str As SubObjectCls) str.PartNo = SubObject.PartNo)
+            If Not i = -1 Then
+                AligniPropertyValues(SubObject, PartsListFromExcel(i))
+            End If
 
-                ' ── Determine type from VAULTED NAME extension (works in both modes) ──
-                Dim ext As String = ".ipt"  ' safe default
-                If Not String.IsNullOrWhiteSpace(SubObject.FileName) Then
-                    ext = System.IO.Path.GetExtension(SubObject.FileName)
-                End If
-                Dim isAssembly As Boolean = ext.Equals(".iam", StringComparison.OrdinalIgnoreCase)
+            ' ── Determine type from VAULTED NAME extension (works in both modes) ──
+            Dim ext As String = ".ipt"  ' safe default
+            If Not String.IsNullOrWhiteSpace(SubObject.FileName) Then
+                ext = System.IO.Path.GetExtension(SubObject.FileName)
+            End If
+            Dim isAssembly As Boolean = ext.Equals(".iam", StringComparison.OrdinalIgnoreCase)
 
-                ' Cable detection: title contains "cable" and the target is an assembly.
-                Dim isCable As Boolean = isAssembly AndAlso
+            ' Cable detection: title contains "cable" and the target is an assembly.
+            Dim isCable As Boolean = isAssembly AndAlso
                     Not SubObject.LegacyDescr Is Nothing AndAlso
                     SubObject.LegacyDescr.IndexOf("cable", StringComparison.OrdinalIgnoreCase) >= 0
 
-                ' Target filename: always placed beside the active document.
-                Dim activeDir As String = System.IO.Path.GetDirectoryName(
+            ' Target filename: always placed beside the active document.
+            Dim activeDir As String = System.IO.Path.GetDirectoryName(
                     m_inventorApplication.ActiveDocument.FullDocumentName)
-                newfilename = System.IO.Path.Combine(activeDir, SubObject.PartNo & ext)
+            newfilename = System.IO.Path.Combine(activeDir, SubObject.PartNo & ext)
 
-                ' Cable assemblies also need a companion .ipt.
+            ' Cable assemblies also need a companion .ipt.
+            If isCable Then
+                NewCablePartName = System.IO.Path.Combine(activeDir, SubObject.PartNo & ".ipt")
+            End If
+
+            ' ── Resolve template source ───────────────────────────────────────
+            If Not m_settings.UseInventorDefaults Then
+                ' Use configurable template filenames from appsettings.json,
+                ' resolved under <VaultWorkingFolder>\Designs\.
                 If isCable Then
-                    NewCablePartName = System.IO.Path.Combine(activeDir, SubObject.PartNo & ".ipt")
+                    basepartname = TemplatePath(m_settings.CableAssemblyTemplate)
+                    basecablepartname = TemplatePath(m_settings.CablePartTemplate)
+                ElseIf isAssembly Then
+                    basepartname = TemplatePath(m_settings.AssemblyTemplate)
+                Else
+                    basepartname = TemplatePath(m_settings.PartTemplate)
                 End If
+            End If
+            ' (If UseInventorDefaults is True, basepartname stays empty
+            '  and we create from Inventor's defaults below.)
 
-                ' ── Resolve template source ───────────────────────────────────────
-                If Not m_settings.UseInventorDefaults Then
-                    ' Use configurable template filenames from appsettings.json,
-                    ' resolved under <VaultWorkingFolder>\Designs\.
-                    If isCable Then
-                        basepartname = TemplatePath(m_settings.CableAssemblyTemplate)
-                        basecablepartname = TemplatePath(m_settings.CablePartTemplate)
-                    ElseIf isAssembly Then
-                        basepartname = TemplatePath(m_settings.AssemblyTemplate)
+            ' ── Create the file if it doesn't already exist locally ────────────
+            If Not System.IO.File.Exists(newfilename) Then
+                Dim expectedfileextension As String = System.IO.Path.GetExtension(newfilename)
+                Dim tmpstr As String = FindFileInVWF(newfilename)
+
+                If tmpstr = String.Empty Then
+                    ' It doesn't exist anywhere in the local Vault Working Folder.
+                    If m_settings.UseInventorDefaults Then
+                        ' Create from Inventor's built-in default templates.
+                        CreateFromInventorDefault(newfilename, isAssembly)
+                        If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
+                               Not System.IO.File.Exists(NewCablePartName) Then
+                            CreateFromInventorDefault(NewCablePartName, False)
+                        End If
                     Else
-                        basepartname = TemplatePath(m_settings.PartTemplate)
+                        ' Copy from the configured template file.
+                        System.IO.File.Copy(basepartname, newfilename)
+                        If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
+                               Not System.IO.File.Exists(NewCablePartName) Then
+                            System.IO.File.Copy(basecablepartname, NewCablePartName)
+                        End If
                     End If
-                End If
-                ' (If UseInventorDefaults is True, basepartname stays empty
-                '  and we create from Inventor's defaults below.)
-
-                ' ── Create the file if it doesn't already exist locally ────────────
-                If Not System.IO.File.Exists(newfilename) Then
-                    Dim expectedfileextension As String = System.IO.Path.GetExtension(newfilename)
-                    Dim tmpstr As String = FindFileInVWF(newfilename)
-
-                    If tmpstr = String.Empty Then
-                        ' It doesn't exist anywhere in the local Vault Working Folder.
+                Else
+                    ' File was found elsewhere in VWF — reuse or copy template over it.
+                    newfilename = foundfile.FullName
+                    If Not System.IO.Path.GetExtension(newfilename) = expectedfileextension Then
+                        newfilename = Left(newfilename, newfilename.Length - 4) & expectedfileextension
+                    End If
+                    If Not System.IO.File.Exists(newfilename) Then
                         If m_settings.UseInventorDefaults Then
-                            ' Create from Inventor's built-in default templates.
                             CreateFromInventorDefault(newfilename, isAssembly)
-                            If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
-                               Not System.IO.File.Exists(NewCablePartName) Then
-                                CreateFromInventorDefault(NewCablePartName, False)
-                            End If
                         Else
-                            ' Copy from the configured template file.
                             System.IO.File.Copy(basepartname, newfilename)
-                            If Not String.IsNullOrEmpty(NewCablePartName) AndAlso
-                               Not System.IO.File.Exists(NewCablePartName) Then
-                                System.IO.File.Copy(basecablepartname, NewCablePartName)
-                            End If
                         End If
-                    Else
-                        ' File was found elsewhere in VWF — reuse or copy template over it.
-                        newfilename = foundfile.FullName
-                        If Not System.IO.Path.GetExtension(newfilename) = expectedfileextension Then
-                            newfilename = Left(newfilename, newfilename.Length - 4) & expectedfileextension
-                        End If
-                        If Not System.IO.File.Exists(newfilename) Then
-                            If m_settings.UseInventorDefaults Then
-                                CreateFromInventorDefault(newfilename, isAssembly)
-                            Else
-                                System.IO.File.Copy(basepartname, newfilename)
-                            End If
-                        End If
-                        foundfile = Nothing
                     End If
+                    foundfile = Nothing
                 End If
-            Catch ex As Exception
-                MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
-            End Try
+            End If
+            'Catch ex As Exception
+            '    MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
+            'End Try
             Return newfilename
         End Function
 
@@ -779,12 +784,37 @@ Namespace CreateAssemblyFromExcelAddin
             End Try
         End Sub
 
+        ' ══════════════════════════════════════════════════════════════════════
+        ' REPLACEMENT for CreateAssemblyStructure.
+        '
+        ' Fixes vs. the original:
+        '
+        ' 1.  Parent document lookup — the old code used
+        '         doc.DisplayName = ParentName & ".iam"
+        '     which hardcodes .iam and relies on DisplayName format.
+        '     The new code compares Path.GetFileNameWithoutExtension(doc.FullDocumentName)
+        '     against ParentName, which works for any extension and is immune to
+        '     DisplayName quirks.  It also confirms the parent is an AssemblyDocument
+        '     before attempting to add occurrences.
+        '
+        ' 2.  ProjectCode path guard — the old code did
+        '         If Not FullFileName.Contains(ProjectCode) Then Exit Sub
+        '     which silently aborted placement whenever the parent file's path
+        '     didn't contain the 4-letter project code.  This always fails in
+        '     Excel mode because files are placed beside the active document
+        '     with their drawing number as filename, not in a project-named folder.
+        '
+        '     The new code:
+        '       • In Excel mode:  verifies the parent belongs to this project by
+        '         checking PartsListFromExcel membership (the authoritative source).
+        '       • In FolderScan mode:  preserves the original path-based check.
+        ' ══════════════════════════════════════════════════════════════════════
+
         ''' <summary>
         ''' Creates a new occurrence of our subObject if the "subObject.name:1" doesn't already exist
         ''' </summary>
-        ''' <param name="subObject">The SubObject to Create (it it doesn't already exist!)</param>
-        ''' <param name="parentName">The parent of subObject</param>
-        ''' <remarks></remarks>
+        ''' <param name="SubObject">The SubObject to Create (if it doesn't already exist!)</param>
+        ''' <param name="ParentName">The parent of subObject (DRAWING NUMBER, no extension)</param>
         Private Sub CreateAssemblyStructure(SubObject As SubObjectCls, ParentName As String)
             Dim asmDoc As AssemblyDocument = Nothing
             Dim realOcc As ComponentOccurrence = Nothing
@@ -800,55 +830,61 @@ Namespace CreateAssemblyFromExcelAddin
                     Dim foldername As String = FolderIdsToFolderEntities.Select(Function(m) m).Where(Function(kvp) kvp.Key = VaultedFileList.Item(i).FolderId).Select(Function(k) k.Value).First().FullName
                     foldername = foldername.Replace("/", "\").Replace("$", m_settings.VaultWorkingFolder & "\")
                     newfilename = foldername & "\" & VaultedFileList.Item(i).Name
-                    'Dim FileId As Long = VaultedFileList.Item(i).Id
-                    'VaultedFileList.RemoveAll(Function(x) )
                 End If
 
+                If String.IsNullOrEmpty(newfilename) Then Exit Sub
+
                 PosnMatrix = m_inventorApplication.TransientGeometry.CreateMatrix
+
                 If ParentName = System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName) Then
-                    'immediate descendants of the parent assembly
+                    ' ── Immediate descendants of the open assembly ────────────────
                     asmDoc = m_inventorApplication.ActiveDocument
                     Try
-                        If Not asmDoc.ComponentDefinition.Document.FullFileName.Tolower.Contains(ProjectCode.ToLower()) Then Exit Sub
+                        If Not BelongsToProject(asmDoc) Then Exit Sub
                         realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
                         realOccStr = realOcc.Name
                         If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And
-                            System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
-                            'cable assemblies in parent assembly
+                            System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then
                             ReplaceCableParts(realOcc, SubObject)
                         End If
                     Catch ex As Exception
                         MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
                     End Try
                 Else
-                    'one of its grandchildren
+                    ' ── Grandchildren: find the parent document in AllReferencedDocuments ──
                     Dim tmpdoc As Inventor.Document = Nothing
                     For Each doc As Inventor.Document In m_inventorApplication.ActiveDocument.AllReferencedDocuments
-                        'at this point we should stop the insert of occurrences if the assembly is called "Replace With XXX" as it's doing work that's unecessary!
-                        If doc.DisplayName = ParentName & ".iam" Or doc.DisplayName.StartsWith("Replace With " & ParentName, StringComparison.OrdinalIgnoreCase) Then
+                        ' Match by filename stem (works for .iam and .ipt, immune to DisplayName quirks).
+                        Dim docStem As String = System.IO.Path.GetFileNameWithoutExtension(doc.FullDocumentName)
+                        If String.Equals(docStem, ParentName, StringComparison.OrdinalIgnoreCase) OrElse
+                           docStem.StartsWith("Replace With " & ParentName, StringComparison.OrdinalIgnoreCase) Then
                             tmpdoc = doc
                             Exit For
                         End If
                     Next
 
-                    Try
-                        If Not tmpdoc Is Nothing Then
-                            asmDoc = tmpdoc
-                            For Each a As ComponentOccurrence In asmDoc.ComponentDefinition.Occurrences
-                                If a.Name = System.IO.Path.GetFileNameWithoutExtension(newfilename) & ":1" Then
-                                    realOcc = a
-                                End If
-                            Next
+                    ' The parent must be an assembly — you cannot add occurrences to a part.
+                    If tmpdoc Is Nothing OrElse Not (TypeOf tmpdoc Is AssemblyDocument) Then Exit Sub
 
-                            If realOcc Is Nothing Then 'only insert the occurrence once or we end up with a huge assembly containing multiple occurrences...
-                                'don't add anything to files outside of this project folder as we have to assume they are not checked out/are released.
-                                If Not asmDoc.ComponentDefinition.Document.FullFileName.tolower.Contains(ProjectCode.ToLower()) Then Exit Sub
-                                realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
-                                realOccStr = realOcc.Name
-                                If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) And
-                                    System.IO.Path.GetDirectoryName(newfilename).ToLower.Contains(ProjectCode.ToLower) Then 'assign iproperties to new parts
-                                    ReplaceCableParts(realOcc, SubObject)
-                                End If
+                    Try
+                        asmDoc = DirectCast(tmpdoc, AssemblyDocument)
+
+                        ' Check that the parent belongs to this project before modifying it.
+                        If Not BelongsToProject(asmDoc) Then Exit Sub
+
+                        ' Check if the child occurrence already exists.
+                        For Each a As ComponentOccurrence In asmDoc.ComponentDefinition.Occurrences
+                            If a.Name = System.IO.Path.GetFileNameWithoutExtension(newfilename) & ":1" Then
+                                realOcc = a
+                            End If
+                        Next
+
+                        If realOcc Is Nothing Then
+                            ' Only insert the occurrence once.
+                            realOcc = asmDoc.ComponentDefinition.Occurrences.Add(newfilename, PosnMatrix)
+                            realOccStr = realOcc.Name
+                            If Not realOccStr.StartsWith("Replace With", StringComparison.OrdinalIgnoreCase) Then
+                                ReplaceCableParts(realOcc, SubObject)
                             End If
                         End If
                     Catch ex As Exception
@@ -859,6 +895,38 @@ Namespace CreateAssemblyFromExcelAddin
                 MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
             End Try
         End Sub
+
+        ''' <summary>
+        ''' Determines whether a document "belongs to" the current project and is therefore
+        ''' safe to modify.
+        ''' <para>
+        ''' In <see cref="HierarchySourceMode.Excel"/> mode the authoritative list is
+        ''' <see cref="PartsListFromExcel"/> — any document whose filename stem matches a
+        ''' known PartNo is part of this project, regardless of its physical path.
+        ''' </para>
+        ''' <para>
+        ''' In <see cref="HierarchySourceMode.FolderScan"/> mode the original path-based
+        ''' heuristic is preserved: the document's <c>FullFileName</c> must contain the
+        ''' 4-letter <see cref="ProjectCode"/>.
+        ''' </para>
+        ''' </summary>
+        Private Function BelongsToProject(doc As Inventor.Document) As Boolean
+            If m_settings.HierarchySource = HierarchySourceMode.Excel Then
+                ' In Excel mode, check whether this document's filename stem is listed
+                ' in the spreadsheet data (or is the active top-level assembly itself).
+                Dim stem As String = System.IO.Path.GetFileNameWithoutExtension(doc.FullDocumentName)
+                If String.Equals(stem,
+                    System.IO.Path.GetFileNameWithoutExtension(m_inventorApplication.ActiveDocument.DisplayName),
+                    StringComparison.OrdinalIgnoreCase) Then
+                    Return True
+                End If
+                Return PartsListFromExcel.Exists(
+                    Function(x) String.Equals(x.PartNo, stem, StringComparison.OrdinalIgnoreCase))
+            Else
+                ' Legacy path-based check.
+                Return doc.FullDocumentName.IndexOf(ProjectCode, StringComparison.OrdinalIgnoreCase) >= 0
+            End If
+        End Function
 
         ''' <summary>
         ''' Copies iProperty values to the subObjectCls for this file
@@ -879,31 +947,31 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <param name="subObject">the subobject containing our aligned iProperties (taken from Excel)</param>
         ''' <remarks></remarks>
         Private Sub AssignIProperties(ByVal RealOcc As ComponentOccurrence, ByVal SubObject As SubObjectCls)
-            Try
-                Dim invProjProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{32853F0F-3444-11D1-9E93-0060B03C1CA6}")
-                Dim invSummaryiProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}")
-                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kPartNumberDesignTrackingProperties).Value = SubObject.PartNo 'part number
-                If SubObject.LegacyDescr Is Nothing Then
-                    invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = "POPULATED BY CAFE TOOL" 'description
-                Else
-                    invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = SubObject.LegacyDescr 'description
-                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = SubObject.LegacyDescr 'title
-                End If
-                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kProjectDesignTrackingProperties).Value = "A90.1" 'project
-                If SubObject.LegacyRev Is Nothing Then
-                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = "A" 'revision
-                Else
-                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = SubObject.LegacyRev 'revision
-                End If
-                If SubObject.LegacyDrawingNo Is Nothing Then
-                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = "HR/0/#####" 'subject
-                Else
-                    invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = SubObject.LegacyDrawingNo 'subject
-                End If
-                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kCommentsSummaryInformation).Value = "MODELLED FROM DRAWINGS"
-            Catch ex As Exception
-                MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
-            End Try
+            'Try
+            Dim invProjProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{32853F0F-3444-11D1-9E93-0060B03C1CA6}")
+            Dim invSummaryiProperties As PropertySet = RealOcc.Definition.Document.PropertySets.Item("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}")
+            invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kPartNumberDesignTrackingProperties).Value = SubObject.PartNo 'part number
+            If SubObject.LegacyDescr Is Nothing Then
+                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = "POPULATED BY CAFE TOOL" 'description
+            Else
+                invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kDescriptionDesignTrackingProperties).Value = SubObject.LegacyDescr 'description
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kTitleSummaryInformation).Value = SubObject.LegacyDescr 'title
+            End If
+            invProjProperties.ItemByPropId(PropertiesForDesignTrackingPropertiesEnum.kProjectDesignTrackingProperties).Value = "A90.1" 'project
+            If SubObject.LegacyRev Is Nothing Then
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = "A" 'revision
+            Else
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kRevisionSummaryInformation).Value = SubObject.LegacyRev 'revision
+            End If
+            If SubObject.LegacyDrawingNo Is Nothing Then
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = "HR/0/#####" 'subject
+            Else
+                invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kSubjectSummaryInformation).Value = SubObject.LegacyDrawingNo 'subject
+            End If
+            invSummaryiProperties.ItemByPropId(PropertiesForSummaryInformationEnum.kCommentsSummaryInformation).Value = "MODELLED FROM DRAWINGS"
+            'Catch ex As Exception
+            '    MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
+            'End Try
         End Sub
 
         ''' <summary>
@@ -931,23 +999,23 @@ Namespace CreateAssemblyFromExcelAddin
         ''' <remarks>Also creates the files collection if it doesn't exist already</remarks>
         Private Function GetExistingFile(ByVal Dir As DirectoryInfo, ByVal NewFileName As String) As String
             Dim foundfilename As String = String.Empty
-            Try
-                'this way should create a large list of .ipt/iam files in one pass that we can keep for later reuse. It will likely be slow initially but faster later.
-                If files Is Nothing Then
-                    files = Dir.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(Function(s As FileInfo) _
+            'Try
+            'this way should create a large list of .ipt/iam files in one pass that we can keep for later reuse. It will likely be slow initially but faster later.
+            If files Is Nothing Then
+                files = Dir.EnumerateFiles("*.*", SearchOption.AllDirectories).Where(Function(s As FileInfo) _
                                                                                              s.Name.EndsWith(".ipt", StringComparison.OrdinalIgnoreCase) OrElse
                                                                                              s.Name.EndsWith(".iam", StringComparison.OrdinalIgnoreCase))
-                End If
-                Dim file As FileInfo = (From f As FileInfo In files
-                                        Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = NewFileName
-                                        Select f).FirstOrDefault()
-                If Not file Is Nothing Then
-                    foundfile = file
-                    foundfilename = file.Name
-                End If
-            Catch ex As Exception
-                MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
-            End Try
+            End If
+            Dim file As FileInfo = (From f As FileInfo In files
+                                    Where System.IO.Path.GetFileNameWithoutExtension(f.Name) = NewFileName
+                                    Select f).FirstOrDefault()
+            If Not file Is Nothing Then
+                foundfile = file
+                foundfilename = file.Name
+            End If
+            'Catch ex As Exception
+            '    MessageBox.Show("Exception was: " + ex.Message + vbCrLf + ex.StackTrace)
+            'End Try
             Return foundfilename
         End Function
         ''' <summary>
@@ -1888,8 +1956,10 @@ Namespace CreateAssemblyFromExcelAddin
                             sheetData.Columns.Add(ColumnName)
                         End If
                     Next
-                    'row data
-                    For i = 2 To values.GetLength(0)
+                    'row data - start from Excel row 3 (row 1 = title, row 2 = headers)
+                    For i = 3 To values.GetLength(0)
+                        'exit the for loop if we hit an empty cell in the first column as this indicates the end of the data
+                        If values(i, 1) Is Nothing Then Exit For
                         Dim SheetRow As DataRow = sheetData.NewRow()
                         Dim ColumnNum As Integer = 0
                         For j = 1 To sheetData.Columns.Count
