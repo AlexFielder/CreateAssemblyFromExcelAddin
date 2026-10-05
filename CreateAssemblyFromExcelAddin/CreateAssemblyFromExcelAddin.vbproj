@@ -1,6 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableComHosting>false</EnableComHosting>
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Deterministic>false</Deterministic>
@@ -29,66 +32,58 @@
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DocumentationFile></DocumentationFile>
-    <NoWarn>42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
+    <NoWarn>CA1416,42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
     <RegisterForComInterop>false</RegisterForComInterop>
-    <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DocumentationFile></DocumentationFile>
     <DefineDebug>false</DefineDebug>
-    <NoWarn>42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
+    <NoWarn>CA1416,42016,42017,42018,42019,42032,42353,42354,42355</NoWarn>
     <DebugType>none</DebugType>
     <RegisterForComInterop>false</RegisterForComInterop>
-    <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
-    <!-- JSON-based configuration; mirrors the Metrol JobPublisher pattern (Microsoft.Extensions.Configuration.Json).
-         8.0.x packages target netstandard2.0 and work on net48. Newtonsoft.Json is used for writing back to appsettings.json. -->
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Autodesk.Connectivity.Explorer.Extensibility">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Explorer.Extensibility.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.Connectivity.Explorer.Extensibility.dll</HintPath>
     </Reference>
     <Reference Include="Autodesk.Connectivity.Explorer.ExtensibilityTools">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Explorer.ExtensibilityTools.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.Connectivity.Explorer.ExtensibilityTools.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.Extensibility.Framework">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.Extensibility.Framework.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.Connectivity.Extensibility.Framework.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Connectivity.WebServices">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.Connectivity.WebServices.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.Connectivity.WebServices.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Forms">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Forms.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.DataManagement.Client.Framework.Vault.Forms">
-      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2024 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Autodesk Vault 2027 SDK\bin\x64\Autodesk.DataManagement.Client.Framework.Vault.Forms.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Autodesk.Inventor.Interop">
-      <HintPath>C:\Program Files\Autodesk\Inventor 2024\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
+      <HintPath>C:\Program Files\Autodesk\Inventor 2027\Bin\Public Assemblies\Autodesk.Inventor.Interop.dll</HintPath>
     </Reference>
-    <Reference Update="System">
-      <Name>System</Name>
-    </Reference>
-    <Reference Include="System.Web.Services" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="FileSelectionForm.Designer.vb">
@@ -104,62 +99,7 @@
     <None Include="SetupCAFE\SetupCAFE.isproj" />
   </ItemGroup>
   <ItemGroup>
-    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1 Client Profile</ProductName>
-      <Install>false</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
-      <Visible>False</Visible>
-      <ProductName>.NET Framework 3.5 SP1</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
-      <Visible>False</Visible>
-      <ProductName>Windows Installer 3.1</ProductName>
-      <Install>true</Install>
-    </BootstrapperPackage>
-  </ItemGroup>
-  <ItemGroup>
     <EmbeddedResource Include="Icons8-Windows-8-Food-Cafe.ico" />
-  </ItemGroup>
-  <ItemGroup>
-    <COMReference Include="Microsoft.Office.Core">
-      <Guid>{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}</Guid>
-      <VersionMajor>2</VersionMajor>
-      <VersionMinor>7</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>primary</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </COMReference>
-    <COMReference Include="Microsoft.Office.Interop.Excel">
-      <Guid>{00020813-0000-0000-C000-000000000046}</Guid>
-      <VersionMajor>1</VersionMajor>
-      <VersionMinor>7</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>primary</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </COMReference>
-    <COMReference Include="Office">
-      <Guid>{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}</Guid>
-      <VersionMajor>2</VersionMajor>
-      <VersionMinor>6</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>tlbimp</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </COMReference>
-    <COMReference Include="VBIDE">
-      <Guid>{0002E157-0000-0000-C000-000000000046}</Guid>
-      <VersionMajor>5</VersionMajor>
-      <VersionMinor>3</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>primary</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </COMReference>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="fin.mp3" />
@@ -173,22 +113,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  <PropertyGroup>
-	  <PostBuildEvent>
-		  echo Configuration: $(Configuration)
-		  echo SolutionDir: $(SolutionDir)
-		  echo OutDir: $(OutDir)
-		  echo ProjectDir: $(ProjectDir)
-		  echo ProjectName: $(ProjectName)
-		  echo TargetDir: $(TargetDir)
-		  if "$(Configuration)"=="Debug" (
-		  XCopy "$(TargetDir)*.*" "C:\ProgramData\Autodesk\Inventor Addins\$(ProjectName)\*.*" /Y /R
-		  if not exist "C:\Logs" mkdir "C:\Logs"
-		  )
-		  if "$(Configuration)"=="Release" (
-		  cd "$(ProjectDir)\Installer"
-		  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
-		  )
-	  </PostBuildEvent>
-  </PropertyGroup>
+  <Target Name="DeployAddin" AfterTargets="Build">
+    <Exec Condition="'$(Configuration)'=='Debug'" Command="XCopy &quot;$(OutDir)*.*&quot; &quot;C:\ProgramData\Autodesk\Inventor Addins\$(ProjectName)\&quot; /Y /R /S" />
+    <MakeDir Condition="'$(Configuration)'=='Debug'" Directories="C:\Logs" />
+    <Exec Condition="'$(Configuration)'=='Release' And Exists('$(ProjectDir)Installer\installer.iss')" WorkingDirectory="$(ProjectDir)Installer" Command="&quot;C:\Program Files (x86)\Inno Setup 6\ISCC.exe&quot; &quot;installer.iss&quot;" />
+  </Target>
 </Project>

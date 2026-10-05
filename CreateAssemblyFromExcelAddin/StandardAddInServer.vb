@@ -7,7 +7,6 @@ Imports System.Runtime.InteropServices
 Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 Imports Inventor
-Imports Microsoft.Office.Interop
 
 Imports ACW = Autodesk.Connectivity.WebServices
 Imports ADSK = Autodesk.Connectivity.WebServices
@@ -1515,14 +1514,25 @@ Namespace CreateAssemblyFromExcelAddin
     ''' </summary>
     ''' <remarks></remarks>
     Public NotInheritable Class PictureDispConverter
+        ' UnmanagedType.AsAny is not supported on .NET (Core), so one strongly-typed overload per PICTDESC layout.
         <DllImport("OleAut32.dll",
           EntryPoint:="OleCreatePictureIndirect",
           ExactSpelling:=True, PreserveSig:=False)>
         Private Shared Function OleCreatePictureIndirect(
-    <MarshalAs(UnmanagedType.AsAny)> picdesc As Object,
+    ByRef picdesc As PICTDESC.Icon,
     ByRef iid As Guid,
     <MarshalAs(UnmanagedType.Bool)> fOwn As Boolean
-    ) As IPictureDisp
+    ) As <MarshalAs(UnmanagedType.Interface)> IPictureDisp
+        End Function
+
+        <DllImport("OleAut32.dll",
+          EntryPoint:="OleCreatePictureIndirect",
+          ExactSpelling:=True, PreserveSig:=False)>
+        Private Shared Function OleCreatePictureIndirect(
+    ByRef picdesc As PICTDESC.Bitmap,
+    ByRef iid As Guid,
+    <MarshalAs(UnmanagedType.Bool)> fOwn As Boolean
+    ) As <MarshalAs(UnmanagedType.Interface)> IPictureDisp
         End Function
 
         Shared iPictureDispGuid As Guid = GetType(
@@ -1540,32 +1550,38 @@ Namespace CreateAssemblyFromExcelAddin
             Public Const PICTYPE_ENHMETAFILE As Short = 4
 
             <StructLayout(LayoutKind.Sequential)>
-            Public Class Icon
-                Friend cbSizeOfStruct As Integer = Marshal.SizeOf(
-                  GetType(PICTDESC.Icon))
-                Friend picType As Integer = PICTDESC.PICTYPE_ICON
-                Friend hicon As IntPtr = IntPtr.Zero
+            Public Structure Icon
+                Friend cbSizeOfStruct As Integer
+                Friend picType As Integer
+                Friend hicon As IntPtr
                 Friend unused1 As Integer
                 Friend unused2 As Integer
 
                 Friend Sub New(icon__1 As System.Drawing.Icon)
+                    Me.cbSizeOfStruct = Marshal.SizeOf(GetType(PICTDESC.Icon))
+                    Me.picType = PICTDESC.PICTYPE_ICON
                     Me.hicon = icon__1.ToBitmap().GetHicon()
+                    Me.unused1 = 0
+                    Me.unused2 = 0
                 End Sub
-            End Class
+            End Structure
 
             <StructLayout(LayoutKind.Sequential)>
-            Public Class Bitmap
-                Friend cbSizeOfStruct As Integer = Marshal.SizeOf(
-                  GetType(PICTDESC.Bitmap))
-                Friend picType As Integer = PICTDESC.PICTYPE_BITMAP
-                Friend hbitmap As IntPtr = IntPtr.Zero
-                Friend hpal As IntPtr = IntPtr.Zero
+            Public Structure Bitmap
+                Friend cbSizeOfStruct As Integer
+                Friend picType As Integer
+                Friend hbitmap As IntPtr
+                Friend hpal As IntPtr
                 Friend unused As Integer
 
                 Friend Sub New(bitmap__1 As System.Drawing.Bitmap)
+                    Me.cbSizeOfStruct = Marshal.SizeOf(GetType(PICTDESC.Bitmap))
+                    Me.picType = PICTDESC.PICTYPE_BITMAP
                     Me.hbitmap = bitmap__1.GetHbitmap()
+                    Me.hpal = IntPtr.Zero
+                    Me.unused = 0
                 End Sub
-            End Class
+            End Structure
         End Class
 
         Public Shared Function ToIPictureDisp(
@@ -1783,7 +1799,7 @@ Namespace CreateAssemblyFromExcelAddin
             End Function
         End Class
 
-        Private m_excel As Excel.Application
+        Private m_excel As Object
         Private m_windowHandle As IntPtr
         Private m_processID As IntPtr
         Private Const ExcelWindowCaption As String = "Running From CAFE Tool O_o"
@@ -1794,8 +1810,8 @@ Namespace CreateAssemblyFromExcelAddin
             m_processID = Window.GetWindowThreadProcessId(m_windowHandle)
         End Sub
 
-        Private Function CreateExcelApplication() As Excel.Application
-            Dim excel As New Excel.Application
+        Private Function CreateExcelApplication() As Object
+            Dim excel As Object = CreateObject("Excel.Application")
             excel.Caption = ExcelWindowCaption
             excel.Visible = False
             excel.DisplayAlerts = False
@@ -1804,7 +1820,7 @@ Namespace CreateAssemblyFromExcelAddin
             Return excel
         End Function
 
-        Public ReadOnly Property Excel() As Excel.Application
+        Public ReadOnly Property Excel() As Object
             Get
                 Return Me.m_excel
             End Get
@@ -1859,21 +1875,21 @@ Namespace CreateAssemblyFromExcelAddin
 
         Public Function GetExcelData() As DataSet
             Using wrapper = New ExcelWrapper()
-                Dim app As Excel.Application = wrapper.Excel
+                Dim app As Object = wrapper.Excel
 
-                Dim workbook As Excel.Workbook = app.Workbooks.Open(Me.FileName, 0, True)
+                Dim workbook As Object = app.Workbooks.Open(Me.FileName, 0, True)
 
                 Try
                     Dim excelData As New DataSet()
 
-                    For Each worksheet As Excel.Worksheet In workbook.Worksheets
+                    For Each worksheet As Object In workbook.Worksheets
                         Dim columns As Integer = worksheet.UsedRange.Columns.Count
                         Dim rows As Integer = worksheet.UsedRange.Rows.Count
 
                         If columns > 0 Then
                             Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
 
-                            Dim RowHeaders As Excel.Range = DirectCast(worksheet.UsedRange.Rows(1), Excel.Range)
+                            Dim RowHeaders As Object = worksheet.UsedRange.Rows(1)
 
                             For j As Integer = 1 To columns
                                 Dim columnName As String = RowHeaders.Columns(j).text.ToString()
@@ -1901,7 +1917,7 @@ Namespace CreateAssemblyFromExcelAddin
                                 For j As Integer = 1 To columns
                                     Dim columnName As String = RowHeaders.Columns(j).Text.ToString()
 
-                                    Dim oRange As Excel.Range = DirectCast(worksheet.Cells(i, j), Excel.Range)
+                                    Dim oRange As Object = worksheet.Cells(i, j)
 
                                     If Not String.IsNullOrEmpty(columnName) Then
                                         sheetRow(columnName) = oRange.Text.ToString()
@@ -1928,16 +1944,16 @@ Namespace CreateAssemblyFromExcelAddin
 
         Function GetExcelData(filetab As String) As DataSet
             Using wrapper = New ExcelWrapper()
-                Dim app As Excel.Application = wrapper.Excel
+                Dim app As Object = wrapper.Excel
 
-                Dim workbook As Excel.Workbook = app.Workbooks.Open(Me.FileName, 0, True)
+                Dim workbook As Object = app.Workbooks.Open(Me.FileName, 0, True)
 
                 Try
                     Dim excelData As New DataSet()
-                    Dim worksheet As Excel.Worksheet = app.Sheets(filetab)
+                    Dim worksheet As Object = app.Sheets(filetab)
                     Dim Columns As Integer = worksheet.UsedRange.Columns.Count
                     Dim Rows As Integer = worksheet.UsedRange.Rows.Count
-                    Dim range As Excel.Range = Nothing
+                    Dim range As Object = Nothing
                     range = worksheet.UsedRange()
                     Dim values As Object(,) = range.Value2
                     Dim sheetData As System.Data.DataTable = excelData.Tables.Add(worksheet.Name)
@@ -1984,7 +2000,7 @@ Namespace CreateAssemblyFromExcelAddin
 
                     MessageBox.Show("There was a problem with the sheet name perhaps?" & vbCrLf & ex.Message & vbCrLf & ex.StackTrace)
                     Dim sheetnames As List(Of String) = New List(Of String)
-                    For Each ws As Excel.Worksheet In app.Sheets
+                    For Each ws As Object In app.Sheets
                         If ws.Name.Contains("MODELLING-BASELINE") Then
                             sheetnames.Add(ws.Name)
                         End If
